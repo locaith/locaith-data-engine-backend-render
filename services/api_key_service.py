@@ -5,8 +5,8 @@ from services.auth_service import generate_uuid, generate_api_key, hash_api_key,
 from config import settings
 
 class APIKeyService:
-    def create_key(self, user_id: str, name: str, scopes: List[str], expires_in_days: int = None) -> Dict[str, Any]:
-        """Create a new API key"""
+    def create_key(self, user_id: str, name: str, scopes: List[str], space_id: str = None, expires_in_days: int = None) -> Dict[str, Any]:
+        """Create a new API key linked to a Document Space"""
         key_id = generate_uuid()
         api_key = generate_api_key()
         key_hash = hash_api_key(api_key)
@@ -19,15 +19,16 @@ class APIKeyService:
         
         with get_db() as conn:
             conn.execute("""
-                INSERT INTO api_keys (id, user_id, key_hash, name, scopes, expires_at)
-                VALUES (?, ?, ?, ?, ?, ?)
-            """, [key_id, user_id, key_hash, name, scopes_str, expires_at])
+                INSERT INTO api_keys (id, user_id, space_id, key_hash, name, scopes, expires_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, [key_id, user_id, space_id, key_hash, name, scopes_str, expires_at])
         
         return {
             "id": key_id,
             "name": name,
             "key": api_key,  # Full key only shown once
             "scopes": scopes_str,
+            "space_id": space_id,
             "created_at": datetime.utcnow()
         }
     

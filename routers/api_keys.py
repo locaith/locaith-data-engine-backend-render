@@ -12,11 +12,12 @@ async def create_api_key(
     key_data: APIKeyCreate,
     current_user: dict = Depends(get_current_user)
 ):
-    """Create a new API key"""
+    """Create a new API key linked to a Document Space"""
     result = api_key_service.create_key(
         user_id=current_user["id"],
         name=key_data.name,
         scopes=[s.value for s in key_data.scopes],
+        space_id=key_data.space_id,
         expires_in_days=key_data.expires_in_days
     )
     

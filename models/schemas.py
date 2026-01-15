@@ -78,6 +78,7 @@ class QueryResult(BaseModel):
 class APIKeyCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
     scopes: List[ScopeType] = [ScopeType.READ]
+    space_id: Optional[str] = None  # Link to Document Space
     expires_in_days: Optional[int] = None
 
 class APIKeyResponse(BaseModel):
@@ -85,6 +86,8 @@ class APIKeyResponse(BaseModel):
     name: str
     key_prefix: str  # First 8 chars for identification
     scopes: str
+    space_id: Optional[str] = None
+    space_name: Optional[str] = None
     is_active: bool
     last_used_at: Optional[datetime]
     created_at: datetime

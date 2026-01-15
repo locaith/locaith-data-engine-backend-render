@@ -22,7 +22,7 @@ def get_db():
 def init_database():
     """Initialize database tables"""
     with get_db() as conn:
-        # 1. Users table (no dependencies)
+        # Users table
         conn.execute("""
             CREATE TABLE IF NOT EXISTS users (
                 id VARCHAR PRIMARY KEY,
@@ -37,11 +37,46 @@ def init_database():
             )
         """)
         
-        # 2. API Keys table (depends on users, MUST be before datasets)
+        # Document Spaces table - Container for user's document collections
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS document_spaces (
+                id VARCHAR PRIMARY KEY,
+                user_id VARCHAR NOT NULL,
+                name VARCHAR NOT NULL,
+                description VARCHAR,
+                status VARCHAR DEFAULT 'active',
+                file_count INTEGER DEFAULT 0,
+                total_size_mb DOUBLE DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        
+        # Datasets table - Now linked to Document Spaces
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS datasets (
+                id VARCHAR PRIMARY KEY,
+                user_id VARCHAR NOT NULL,
+                space_id VARCHAR,
+                api_key_id VARCHAR,
+                name VARCHAR NOT NULL,
+                description VARCHAR,
+                file_path VARCHAR NOT NULL,
+                file_type VARCHAR NOT NULL,
+                file_size BIGINT,
+                row_count BIGINT,
+                schema_json VARCHAR,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        
+        # API Keys table - Now linked to Document Spaces
         conn.execute("""
             CREATE TABLE IF NOT EXISTS api_keys (
                 id VARCHAR PRIMARY KEY,
                 user_id VARCHAR NOT NULL,
+                space_id VARCHAR,
                 key_hash VARCHAR NOT NULL,
                 name VARCHAR NOT NULL,
                 scopes VARCHAR DEFAULT 'read',
@@ -56,25 +91,7 @@ def init_database():
             )
         """)
         
-        # 3. Datasets table (depends on users and api_keys)
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS datasets (
-                id VARCHAR PRIMARY KEY,
-                user_id VARCHAR NOT NULL,
-                api_key_id VARCHAR,
-                name VARCHAR NOT NULL,
-                description VARCHAR,
-                file_path VARCHAR NOT NULL,
-                file_type VARCHAR NOT NULL,
-                file_size BIGINT,
-                row_count BIGINT,
-                schema_json VARCHAR,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-        
-        # 4. API Usage tracking table
+        # API Usage tracking table
         conn.execute("""
             CREATE TABLE IF NOT EXISTS api_usage (
                 id VARCHAR PRIMARY KEY,
@@ -86,11 +103,12 @@ def init_database():
                 tokens_used INTEGER DEFAULT 0,
                 bytes_in BIGINT DEFAULT 0,
                 bytes_out BIGINT DEFAULT 0,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (api_key_id) REFERENCES api_keys(id)
             )
         """)
         
-        # 5. Usage logs table (legacy)
+        # Usage logs table (legacy)
         conn.execute("""
             CREATE TABLE IF NOT EXISTS usage_logs (
                 id VARCHAR PRIMARY KEY,
@@ -101,11 +119,13 @@ def init_database():
                 status_code INTEGER,
                 response_time_ms INTEGER,
                 bytes_transferred BIGINT DEFAULT 0,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(id),
+                FOREIGN KEY (api_key_id) REFERENCES api_keys(id)
             )
         """)
         
-        # 6. Query history table
+        # Query history table
         conn.execute("""
             CREATE TABLE IF NOT EXISTS query_history (
                 id VARCHAR PRIMARY KEY,
@@ -115,7 +135,8 @@ def init_database():
                 row_count BIGINT,
                 status VARCHAR DEFAULT 'success',
                 error_message VARCHAR,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(id)
             )
         """)
         
