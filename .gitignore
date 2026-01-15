@@ -1,0 +1,23 @@
+# Environment
+.env
+.env.local
+
+# Data files
+data/parquet/*
+data/raw/*
+data/temp/*
+!data/.gitkeep
+
+# Database
+*.duckdb
+*.duckdb.wal
+
+# Python
+__pycache__/
+*.py[cod]
+venv/
+.venv/
+
+# IDE
+.idea/
+.vscode/

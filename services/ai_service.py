@@ -1,0 +1,223 @@
+"""
+AI Verification Service - Using Gemini 3 Flash Preview
+Verifies and validates data quality using AI
+"""
+import os
+from typing import Dict, Any, List, Optional
+from google import genai
+from google.genai.types import GenerateContentConfig
+from dotenv import load_dotenv
+
+# Load environment variables from .env file in backend folder
+load_dotenv()
+
+# Get API key from environment
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+
+class AIVerificationService:
+    def __init__(self):
+        self.client = None
+        self.model = "gemini-3-flash-preview"
+        self.init_error = None
+        
+        # genai.Client() auto-detects GEMINI_API_KEY from environment
+        if GEMINI_API_KEY:
+            try:
+                self.client = genai.Client()
+            except Exception as e:
+                self.init_error = str(e)
+                print(f"[AI Service] Failed to initialize: {e}")
+    
+    def is_available(self) -> bool:
+        """Check if AI service is available"""
+        return self.client is not None
+    
+    async def verify_data_quality(self, data_sample: List[Dict], schema: Dict) -> Dict[str, Any]:
+        """
+        Verify data quality using AI
+        Returns quality score and issues found
+        """
+        if not self.is_available():
+            return {
+                "available": False,
+                "message": "AI service not configured. Set GEMINI_API_KEY environment variable."
+            }
+        
+        try:
+            # Prepare prompt for data verification
+            prompt = f"""Analyze the following data sample for quality issues.
+
+Schema: {schema}
+
+Data Sample (first 10 rows):
+{data_sample[:10]}
+
+Please analyze and return a JSON response with:
+1. quality_score: 0-100 score
+2. issues: list of issues found (missing values, type mismatches, inconsistencies)
+3. suggestions: list of improvement suggestions
+4. summary: brief summary in Vietnamese
+
+Return ONLY valid JSON, no markdown formatting."""
+
+            response = self.client.models.generate_content(
+                model=self.model,
+                contents=prompt,
+                config=GenerateContentConfig(
+                    temperature=0.3,
+                    max_output_tokens=2000
+                )
+            )
+            
+            # Parse response
+            import json
+            result_text = response.text.strip()
+            # Remove markdown code blocks if present
+            if result_text.startswith("```"):
+                result_text = result_text.split("```")[1]
+                if result_text.startswith("json"):
+                    result_text = result_text[4:]
+            result_text = result_text.strip()
+            
+            result = json.loads(result_text)
+            result["available"] = True
+            return result
+            
+        except Exception as e:
+            return {
+                "available": True,
+                "error": str(e),
+                "quality_score": None,
+                "issues": [],
+                "suggestions": [],
+                "summary": f"Không thể phân tích: {str(e)}"
+            }
+    
+    async def extract_pdf_data(self, pdf_path: str) -> Dict[str, Any]:
+        """
+        Extract and structure data from PDF using AI
+        """
+        if not self.is_available():
+            return {
+                "available": False,
+                "message": "AI service not configured"
+            }
+        
+        try:
+            import pdfplumber
+            
+            # Extract text from PDF
+            text_content = ""
+            tables = []
+            
+            with pdfplumber.open(pdf_path) as pdf:
+                for page in pdf.pages:
+                    text_content += page.extract_text() or ""
+                    page_tables = page.extract_tables()
+                    if page_tables:
+                        tables.extend(page_tables)
+            
+            # Use AI to structure the data
+            prompt = f"""Analyze this PDF content and extract structured data.
+
+Text Content:
+{text_content[:5000]}
+
+Tables Found: {len(tables)}
+First Table Sample: {tables[0] if tables else 'No tables'}
+
+Please return a JSON with:
+1. document_type: type of document (invoice, report, form, etc.)
+2. extracted_data: key-value pairs of important data extracted
+3. table_data: list of tables with headers and rows if applicable
+4. summary: brief summary in Vietnamese
+
+Return ONLY valid JSON."""
+
+            response = self.client.models.generate_content(
+                model=self.model,
+                contents=prompt,
+                config=GenerateContentConfig(
+                    temperature=0.2,
+                    max_output_tokens=4000
+                )
+            )
+            
+            import json
+            result_text = response.text.strip()
+            if result_text.startswith("```"):
+                result_text = result_text.split("```")[1]
+                if result_text.startswith("json"):
+                    result_text = result_text[4:]
+            result_text = result_text.strip()
+            
+            result = json.loads(result_text)
+            result["available"] = True
+            result["raw_text"] = text_content[:1000]
+            result["tables_count"] = len(tables)
+            return result
+            
+        except Exception as e:
+            return {
+                "available": True,
+                "error": str(e),
+                "summary": f"Không thể xử lý PDF: {str(e)}"
+            }
+    
+    async def normalize_data(self, data: List[Dict], target_schema: Dict) -> Dict[str, Any]:
+        """
+        Normalize data according to target schema using AI
+        """
+        if not self.is_available():
+            return {"available": False, "message": "AI service not configured"}
+        
+        try:
+            prompt = f"""Normalize the following data to match the target schema.
+
+Current Data Sample:
+{data[:5]}
+
+Target Schema:
+{target_schema}
+
+Please:
+1. Map current fields to target fields
+2. Convert data types as needed
+3. Handle missing values appropriately
+4. Return a JSON with:
+   - field_mapping: dict mapping current to target fields
+   - normalized_sample: first 3 rows normalized
+   - issues: list of normalization issues
+   - success_rate: estimated percentage of data that can be normalized
+
+Return ONLY valid JSON."""
+
+            response = self.client.models.generate_content(
+                model=self.model,
+                contents=prompt,
+                config=GenerateContentConfig(
+                    temperature=0.2,
+                    max_output_tokens=3000
+                )
+            )
+            
+            import json
+            result_text = response.text.strip()
+            if result_text.startswith("```"):
+                result_text = result_text.split("```")[1]
+                if result_text.startswith("json"):
+                    result_text = result_text[4:]
+            result_text = result_text.strip()
+            
+            result = json.loads(result_text)
+            result["available"] = True
+            return result
+            
+        except Exception as e:
+            return {
+                "available": True,
+                "error": str(e)
+            }
+
+# Singleton instance
+ai_service = AIVerificationService()
