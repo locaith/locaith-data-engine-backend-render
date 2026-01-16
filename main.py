@@ -4,7 +4,7 @@ from fastapi.responses import JSONResponse
 import time
 
 from config import settings
-from routers import auth, data, query, api_keys, billing, ai, rag, spaces
+from routers import auth, data, query, api_keys, billing, ai, rag, spaces, external
 from services.api_key_service import api_key_service
 from services.billing_service import billing_service
 
@@ -96,6 +96,7 @@ app.include_router(billing.router, prefix="/api/v1")
 app.include_router(ai.router, prefix="/api/v1")
 app.include_router(rag.router, prefix="/api/v1")
 app.include_router(spaces.router, prefix="/api/v1")
+app.include_router(external.router, prefix="/api/v1")
 
 # Root endpoint
 @app.get("/")
