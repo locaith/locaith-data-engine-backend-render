@@ -90,8 +90,9 @@ class LakehouseService:
                 return pd.DataFrame([{"content": "Không thể đọc file PPTX"}])
     
     def _extract_pdf_data(self, file_path: str) -> pd.DataFrame:
-        """Extract ALL content from PDF file - tables AND text"""
+        """Extract ALL content from PDF file - tables AND text, with OCR fallback"""
         import pdfplumber
+        import asyncio
         
         all_tables = []
         all_text = []
@@ -112,7 +113,7 @@ class LakehouseService:
                                             row_dict[headers[i]] = val
                                     all_tables.append(row_dict)
                     
-                    # ALWAYS extract text content (not just when no tables)
+                    # ALWAYS extract text content
                     text = page.extract_text()
                     if text and text.strip():
                         all_text.append({
@@ -121,28 +122,50 @@ class LakehouseService:
                             "_type": "text"
                         })
             
-            # Combine tables and text
+            # Check if we got content
             if all_tables and all_text:
-                # Both tables and text found
-                df_tables = pd.DataFrame(all_tables)
-                df_text = pd.DataFrame(all_text)
-                # Prefer text content for full document understanding
-                df = df_text
+                df = pd.DataFrame(all_text)
             elif all_tables:
                 df = pd.DataFrame(all_tables)
             elif all_text:
                 df = pd.DataFrame(all_text)
             else:
-                # No content extracted - might be scanned/image PDF
-                df = pd.DataFrame({
-                    "message": ["PDF có thể là ảnh scan, cần OCR để đọc"],
-                    "suggestion": ["Sử dụng AI Document Intelligence để extract"]
-                })
+                # NO CONTENT - Try OCR for scanned PDFs
+                print(f"[Lakehouse] PDF appears scanned, attempting OCR: {file_path}")
+                try:
+                    from services.ocr_service import ocr_service
+                    
+                    # Run OCR (async in sync context)
+                    loop = asyncio.new_event_loop()
+                    ocr_result = loop.run_until_complete(ocr_service.extract_text_from_pdf(file_path))
+                    loop.close()
+                    
+                    if ocr_result.get("success") and ocr_result.get("pages"):
+                        pages = ocr_result["pages"]
+                        df = pd.DataFrame([{
+                            "page": p["page"],
+                            "content": p["text"],
+                            "_type": "ocr",
+                            "_ocr_method": ocr_result.get("method", "unknown")
+                        } for p in pages])
+                        print(f"[Lakehouse] OCR success: {len(pages)} pages extracted")
+                    else:
+                        df = pd.DataFrame({
+                            "message": ["PDF là ảnh scan - OCR thất bại hoặc không khả dụng"],
+                            "error": [ocr_result.get("error", "Unknown OCR error")],
+                            "_type": ["error"]
+                        })
+                except Exception as ocr_error:
+                    print(f"[Lakehouse] OCR failed: {ocr_error}")
+                    df = pd.DataFrame({
+                        "message": ["PDF có thể là ảnh scan, OCR không khả dụng"],
+                        "suggestion": ["Cài đặt tesseract hoặc sử dụng Gemini API key"],
+                        "_type": ["error"]
+                    })
             
             return df
             
         except Exception as e:
-            # Handle extraction errors gracefully
             return pd.DataFrame({
                 "error": [f"Lỗi đọc PDF: {str(e)}"],
                 "file": [file_path]
