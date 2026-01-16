@@ -1,11 +1,21 @@
 """
-AI Verification Service - Using Gemini 3 Flash Preview
+AI Verification Service - Using Gemini 2.0 Flash
 Verifies and validates data quality using AI
 """
 import os
 from typing import Dict, Any, List, Optional
-from google import genai
-from google.genai.types import GenerateContentConfig
+
+# Try multiple import patterns for Gemini
+try:
+    import google.generativeai as genai
+    USE_GENAI = True
+except ImportError:
+    try:
+        from google import genai as google_genai
+        USE_GENAI = False
+    except ImportError:
+        USE_GENAI = None
+
 from dotenv import load_dotenv
 
 # Load environment variables from .env file in backend folder
@@ -17,20 +27,59 @@ GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 class AIVerificationService:
     def __init__(self):
         self.client = None
-        self.model = "gemini-3-flash-preview"
+        self.model_name = "gemini-2.0-flash"  # Use stable model
         self.init_error = None
         
-        # genai.Client() auto-detects GEMINI_API_KEY from environment
-        if GEMINI_API_KEY:
-            try:
-                self.client = genai.Client()
-            except Exception as e:
-                self.init_error = str(e)
-                print(f"[AI Service] Failed to initialize: {e}")
+        if not GEMINI_API_KEY:
+            self.init_error = "GEMINI_API_KEY not set in environment"
+            print(f"[AI Service] Warning: {self.init_error}")
+            return
+        
+        try:
+            if USE_GENAI is True:
+                # Use google-generativeai SDK
+                genai.configure(api_key=GEMINI_API_KEY)
+                self.client = genai.GenerativeModel(self.model_name)
+                print(f"[AI Service] Initialized with google-generativeai SDK, model: {self.model_name}")
+            elif USE_GENAI is False:
+                # Use google.genai SDK
+                self.client = google_genai.Client(api_key=GEMINI_API_KEY)
+                print(f"[AI Service] Initialized with google.genai SDK, model: {self.model_name}")
+            else:
+                self.init_error = "No Gemini SDK available"
+                print(f"[AI Service] Error: {self.init_error}")
+        except Exception as e:
+            self.init_error = str(e)
+            print(f"[AI Service] Failed to initialize: {e}")
     
     def is_available(self) -> bool:
         """Check if AI service is available"""
         return self.client is not None
+    
+    def _generate(self, prompt: str, temperature: float = 0.3, max_tokens: int = 2000) -> str:
+        """Helper method to generate content with either SDK"""
+        if USE_GENAI is True:
+            # google-generativeai SDK
+            response = self.client.generate_content(
+                prompt,
+                generation_config={
+                    "temperature": temperature,
+                    "max_output_tokens": max_tokens
+                }
+            )
+            return response.text
+        else:
+            # google.genai SDK
+            from google.genai.types import GenerateContentConfig
+            response = self.client.models.generate_content(
+                model=self.model_name,
+                contents=prompt,
+                config=GenerateContentConfig(
+                    temperature=temperature,
+                    max_output_tokens=max_tokens
+                )
+            )
+            return response.text
     
     async def verify_data_quality(self, data_sample: List[Dict], schema: Dict) -> Dict[str, Any]:
         """
@@ -60,14 +109,7 @@ Please analyze and return a JSON response with:
 
 Return ONLY valid JSON, no markdown formatting."""
 
-            response = self.client.models.generate_content(
-                model=self.model,
-                contents=prompt,
-                config=GenerateContentConfig(
-                    temperature=0.3,
-                    max_output_tokens=2000
-                )
-            )
+            result_text = self._generate(prompt, temperature=0.3, max_tokens=2000).strip()
             
             # Parse response
             import json
@@ -134,17 +176,9 @@ Please return a JSON with:
 
 Return ONLY valid JSON."""
 
-            response = self.client.models.generate_content(
-                model=self.model,
-                contents=prompt,
-                config=GenerateContentConfig(
-                    temperature=0.2,
-                    max_output_tokens=4000
-                )
-            )
+            result_text = self._generate(prompt, temperature=0.2, max_tokens=4000).strip()
             
             import json
-            result_text = response.text.strip()
             if result_text.startswith("```"):
                 result_text = result_text.split("```")[1]
                 if result_text.startswith("json"):
@@ -192,17 +226,9 @@ Please:
 
 Return ONLY valid JSON."""
 
-            response = self.client.models.generate_content(
-                model=self.model,
-                contents=prompt,
-                config=GenerateContentConfig(
-                    temperature=0.2,
-                    max_output_tokens=3000
-                )
-            )
+            result_text = self._generate(prompt, temperature=0.2, max_tokens=3000).strip()
             
             import json
-            result_text = response.text.strip()
             if result_text.startswith("```"):
                 result_text = result_text.split("```")[1]
                 if result_text.startswith("json"):
