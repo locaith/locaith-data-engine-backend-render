@@ -142,7 +142,7 @@ class RAGService:
         
         # Build improved prompt
         context = "\n\n".join(context_parts)
-        doc_list = "\n".join([f"- {d['file']}" for d in all_docs])
+        doc_list = "\n".join([f"• {d['file']}" for d in all_docs])
         
         prompt = f"""Bạn là AI assistant cho "{space_name}". Trả lời câu hỏi dựa trên nội dung tài liệu được cung cấp.
 
@@ -154,11 +154,13 @@ NỘI DUNG TÀI LIỆU:
 
 CÂU HỎI: {question}
 
-YÊU CẦU:
-1. Trả lời chính xác dựa trên nội dung tài liệu
-2. Nếu hỏi về danh sách tài liệu, liệt kê ĐẦY ĐỦ tất cả {len(all_docs)} file
-3. Nếu không tìm thấy thông tin, nói rõ ràng
-4. Format câu trả lời dễ đọc, dùng bullet points khi cần"""
+QUAN TRỌNG - QUY TẮC TRẢ LỜI:
+1. KHÔNG dùng markdown (không dùng **, *, #, ```, etc.)
+2. Dùng bullet points bằng dấu • hoặc - 
+3. Dùng số thứ tự 1. 2. 3. khi liệt kê
+4. Viết văn bản thuần, dễ đọc, tự nhiên
+5. Trả lời chính xác 100% dựa trên tài liệu
+6. Nếu không tìm thấy thông tin, nói rõ ràng"""
 
         try:
             answer = self._generate(prompt)

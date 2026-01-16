@@ -263,7 +263,7 @@ SQL:"""
         return "\n\n".join(context)
     
     def _format_sql_result(self, result: Dict, question: str) -> str:
-        """Format SQL result as readable answer"""
+        """Format SQL result as readable answer - NO MARKDOWN"""
         data = result.get("data", [])
         columns = result.get("columns", [])
         row_count = result.get("row_count", 0)
@@ -274,25 +274,23 @@ SQL:"""
         # Single value result
         if row_count == 1 and len(columns) == 1:
             value = data[0][0]
-            return f"**Kết quả:** {value}\n\n_Nguồn: SQL query trên Gold tables (100% chính xác)_"
+            return f"Kết quả: {value}\n\n(Nguồn: SQL query trên Gold tables - 100% chính xác)"
         
-        # Multiple rows - format as table
+        # Multiple rows - format as plain text list
         answer_lines = [f"Tìm thấy {row_count} kết quả:\n"]
         
-        # Build markdown table
-        header = "| " + " | ".join(str(c) for c in columns) + " |"
-        separator = "| " + " | ".join("---" for _ in columns) + " |"
-        answer_lines.append(header)
-        answer_lines.append(separator)
+        # Header line
+        answer_lines.append(" | ".join(str(c) for c in columns))
+        answer_lines.append("-" * 50)
         
-        for row in data[:20]:  # Limit to 20 rows for display
-            row_str = "| " + " | ".join(str(v) if v is not None else "" for v in row) + " |"
+        for row in data[:20]:  # Limit to 20 rows
+            row_str = " | ".join(str(v) if v is not None else "" for v in row)
             answer_lines.append(row_str)
         
         if row_count > 20:
-            answer_lines.append(f"\n_...và {row_count - 20} dòng khác_")
+            answer_lines.append(f"\n...và {row_count - 20} dòng khác")
         
-        answer_lines.append("\n_Nguồn: SQL query trên Gold tables (100% chính xác)_")
+        answer_lines.append("\n(Nguồn: SQL query trên Gold tables - 100% chính xác)")
         
         return "\n".join(answer_lines)
     
@@ -317,7 +315,7 @@ SQL:"""
         return "\n".join(context_parts)
     
     def _list_documents(self, gold_tables: List[Dict]) -> Dict[str, Any]:
-        """Special handler for document listing"""
+        """Special handler for document listing - NO MARKDOWN"""
         if not gold_tables:
             return {
                 "answer": "Chưa có dữ liệu Gold nào. Vui lòng upload và promote files lên Gold Layer.",
@@ -331,7 +329,7 @@ SQL:"""
             name = t.get("source_file") or t.get("table_name", "unknown")
             rows = t.get("row_count", 0)
             quality = t.get("quality_level", "unknown")
-            doc_list.append(f"• **{name}**: {rows} dòng, chất lượng: {quality}")
+            doc_list.append(f"• {name}: {rows} dòng, chất lượng: {quality}")
             total_rows += rows
         
         answer = f"Có {len(gold_tables)} tài liệu trong Gold Layer:\n\n" + "\n".join(doc_list)

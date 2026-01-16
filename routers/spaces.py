@@ -187,9 +187,9 @@ async def chat_with_space(
         
         answer = result.get("answer", "Không tìm thấy câu trả lời.")
         
-        # Add source indicator
+        # Add source indicator (plain text, no markdown)
         if result.get("is_gold_query"):
-            answer += "\n\n_📊 Nguồn: Gold Layer SQL (100% chính xác)_"
+            answer += "\n\n📊 Nguồn: Gold Layer SQL (100% chính xác)"
         
         return ChatResponse(
             answer=answer,
