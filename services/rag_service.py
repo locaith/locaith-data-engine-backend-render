@@ -13,24 +13,48 @@ class RAGService:
     
     def __init__(self):
         self.client = None
+        self.model_name = "gemini-2.0-flash"
         self._init_client()
     
     def _init_client(self):
-        """Initialize Gemini client"""
+        """Initialize Gemini client with proper SDK"""
+        api_key = os.getenv("GEMINI_API_KEY")
+        if not api_key:
+            print("[RAG Service] No GEMINI_API_KEY found")
+            return
+        
         try:
-            from google import genai
-            api_key = os.getenv("GEMINI_API_KEY")
-            if api_key:
+            # Try google-generativeai SDK first
+            import google.generativeai as genai
+            genai.configure(api_key=api_key)
+            self.client = genai.GenerativeModel(self.model_name)
+            self.use_genai = True
+            print(f"[RAG Service] Initialized with google-generativeai, model: {self.model_name}")
+        except ImportError:
+            try:
+                # Fallback to google.genai SDK
+                from google import genai
                 self.client = genai.Client(api_key=api_key)
-                print("[RAG Service] Initialized successfully")
-            else:
-                print("[RAG Service] No GEMINI_API_KEY found")
-        except Exception as e:
-            print(f"[RAG Service] Init error: {e}")
+                self.use_genai = False
+                print(f"[RAG Service] Initialized with google.genai, model: {self.model_name}")
+            except Exception as e:
+                print(f"[RAG Service] Init error: {e}")
     
     def is_available(self) -> bool:
         """Check if service is available"""
         return self.client is not None
+    
+    def _generate(self, prompt: str) -> str:
+        """Generate content with proper SDK"""
+        if self.use_genai:
+            response = self.client.generate_content(prompt)
+            return response.text
+        else:
+            response = self.client.models.generate_content(
+                model=self.model_name,
+                contents=prompt
+            )
+            return response.text
     
     async def query(
         self, 
@@ -39,7 +63,7 @@ class RAGService:
         space_name: str = "Document Space"
     ) -> Dict[str, Any]:
         """
-        Query AI with context from documents
+        Query AI with context from ALL documents
         """
         if not self.is_available():
             return {
@@ -47,19 +71,28 @@ class RAGService:
                 "sources": []
             }
         
-        # Read document contents
+        # Read ALL document contents (no limit)
         context_parts = []
         sources = []
+        all_docs = []  # Track all documents for listing
         
-        for file_path in file_paths[:5]:  # Limit to 5 files
+        for file_path in file_paths:  # Process ALL files, no [:5] limit
             try:
+                file_name = Path(file_path).stem  # Get name without extension
                 content = await self._read_file_content(file_path)
+                
+                # Track all documents
+                doc_info = {"file": file_name, "path": file_path, "has_content": content is not None}
+                all_docs.append(doc_info)
+                
                 if content:
-                    file_name = Path(file_path).name
-                    context_parts.append(f"=== {file_name} ===\n{content[:5000]}")  # Limit content
+                    # Limit content per file to avoid token overflow, but still include all files
+                    max_chars = min(8000, 50000 // max(len(file_paths), 1))
+                    context_parts.append(f"=== {file_name} ===\n{content[:max_chars]}")
                     sources.append({"file": file_name, "path": file_path})
             except Exception as e:
                 print(f"[RAG] Error reading {file_path}: {e}")
+                all_docs.append({"file": Path(file_path).stem, "path": file_path, "has_content": False, "error": str(e)})
         
         if not context_parts:
             return {
@@ -67,26 +100,33 @@ class RAGService:
                 "sources": []
             }
         
-        # Build prompt
+        # Build improved prompt with document listing
         context = "\n\n".join(context_parts)
+        doc_list = "\n".join([f"- {d['file']}" for d in all_docs])
+        
         prompt = f"""Bạn là AI assistant cho "{space_name}". Trả lời câu hỏi dựa trên nội dung tài liệu được cung cấp.
 
-TÀI LIỆU:
+DANH SÁCH TÀI LIỆU ({len(all_docs)} files):
+{doc_list}
+
+NỘI DUNG TÀI LIỆU:
 {context}
 
 CÂU HỎI: {question}
 
-Hãy trả lời dựa trên nội dung tài liệu trên. Nếu không tìm thấy thông tin, hãy nói rõ."""
+YÊU CẦU:
+1. Trả lời chính xác dựa trên nội dung tài liệu
+2. Nếu hỏi về danh sách tài liệu, liệt kê ĐẦY ĐỦ tất cả {len(all_docs)} file
+3. Nếu không tìm thấy thông tin, nói rõ ràng
+4. Format câu trả lời dễ đọc, dùng bullet points khi cần"""
 
         try:
-            response = self.client.models.generate_content(
-                model="gemini-2.0-flash",
-                contents=prompt
-            )
+            answer = self._generate(prompt)
             
             return {
-                "answer": response.text,
-                "sources": sources
+                "answer": answer,
+                "sources": sources,
+                "total_documents": len(all_docs)
             }
         except Exception as e:
             return {
