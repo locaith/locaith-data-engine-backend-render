@@ -128,7 +128,7 @@ class LakehouseService:
         
         return df
     
-    def ingest_file(self, file_path: str, user_id: str, name: str, description: str = None, space_id: str = None) -> Dict[str, Any]:
+    def ingest_file(self, file_path: str, user_id: str, name: str, description: str = None, space_id: str = None, storage_url: str = None) -> Dict[str, Any]:
         """Ingest a file into the lakehouse"""
         file_ext = os.path.splitext(file_path)[1].lower()
         
@@ -201,6 +201,7 @@ class LakehouseService:
         
         # Convert to Parquet for efficient storage
         parquet_path = os.path.join(self.data_dir, "parquet", f"{dataset_id}.parquet")
+        os.makedirs(os.path.dirname(parquet_path), exist_ok=True)
         df.to_parquet(parquet_path, index=False)
         
         # Get schema info (excluding internal columns for clean API)
@@ -216,12 +217,12 @@ class LakehouseService:
         file_size = os.path.getsize(parquet_path)
         row_count = len(df)
         
-        # Save dataset metadata
+        # Save dataset metadata (include storage_url if available for persistence)
         with get_db() as conn:
             conn.execute("""
-                INSERT INTO datasets (id, user_id, space_id, name, description, file_path, file_type, file_size, row_count, schema_json)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, [dataset_id, user_id, space_id, name, description, parquet_path, file_type, file_size, row_count, json.dumps(schema_info)])
+                INSERT INTO datasets (id, user_id, space_id, name, description, file_path, file_type, file_size, row_count, schema_json, storage_url)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, [dataset_id, user_id, space_id, name, description, parquet_path, file_type, file_size, row_count, json.dumps(schema_info), storage_url])
         
         return {
             "id": dataset_id,

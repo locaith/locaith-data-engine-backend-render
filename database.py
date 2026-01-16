@@ -66,6 +66,7 @@ def init_database():
                 file_size BIGINT,
                 row_count BIGINT,
                 schema_json VARCHAR,
+                storage_url VARCHAR,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )

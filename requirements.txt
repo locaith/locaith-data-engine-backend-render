@@ -30,8 +30,12 @@ python-pptx>=0.6.23
 openpyxl>=3.1.2
 xlrd>=2.0.1
 
-# AI (Google Gemini)
+# AI (Google Gemini - both SDKs for compatibility)
 google-genai>=1.0.0
+google-generativeai>=0.8.0
+
+# Supabase (Storage + Database)
+supabase>=2.0.0
 
 # Environment
 python-dotenv>=1.0.0

@@ -8,6 +8,7 @@ from models.schemas import DatasetResponse, DatasetCreate, DatasetPreview
 from services.lakehouse import lakehouse_service
 from services.api_key_service import api_key_service
 from services.ai_document_service import ai_doc_intelligence
+from services.supabase_storage import supabase_storage
 from routers.auth import get_current_user
 from config import settings
 from services.auth_service import generate_uuid
@@ -54,21 +55,37 @@ async def upload_file(
             detail=f"File không hỗ trợ. Chỉ chấp nhận: {', '.join(allowed_extensions)}"
         )
     
-    # Save file temporarily
-    temp_path = os.path.join(settings.DATA_DIR, "raw", f"{generate_uuid()}{file_ext}")
+    # Read file content
+    content = await file.read()
+    file_id = generate_uuid()
+    
+    # Try to upload to Supabase Storage first (for persistence)
+    storage_url = None
+    if supabase_storage.is_available():
+        storage_path = f"{current_user['id']}/{file_id}{file_ext}"
+        success, result = await supabase_storage.upload_file(content, storage_path)
+        if success:
+            storage_url = result
+            print(f"[Upload] File persisted to Supabase: {storage_url}")
+        else:
+            print(f"[Upload] Supabase upload failed, using local: {result}")
+    
+    # Save file locally for processing (temporary)
+    temp_path = os.path.join(settings.DATA_DIR, "raw", f"{file_id}{file_ext}")
+    os.makedirs(os.path.dirname(temp_path), exist_ok=True)
     
     async with aiofiles.open(temp_path, 'wb') as f:
-        content = await file.read()
         await f.write(content)
     
     try:
-        # Ingest file
+        # Ingest file (pass storage_url if available)
         result = lakehouse_service.ingest_file(
             file_path=temp_path,
             user_id=current_user["id"],
             name=name,
             description=description,
-            space_id=space_id
+            space_id=space_id,
+            storage_url=storage_url  # Store Supabase URL for later retrieval
         )
         
         # Update space file_count if space_id provided
@@ -83,8 +100,9 @@ async def upload_file(
                     WHERE id = ? AND user_id = ?
                 """, [result["file_size"] / (1024 * 1024), space_id, current_user["id"]])
         
-        # Clean up temp file
-        os.remove(temp_path)
+        # Clean up temp file (we have it in Supabase now)
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
         
         return DatasetResponse(
             id=result["id"],
