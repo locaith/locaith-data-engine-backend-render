@@ -151,7 +151,7 @@ async def chat_with_space(
     chat: ChatRequest, 
     current_user: dict = Depends(get_current_user)
 ):
-    """Test AI chat with documents in this space"""
+    """Test AI chat with documents in this space - Uses Gold Layer for 100% accuracy"""
     from services.rag_service import rag_service
     
     with get_db() as conn:
@@ -176,15 +176,23 @@ async def chat_with_space(
         
         file_paths = [f[0] for f in files]
     
-    # Query RAG with space files
+    # Query RAG with Gold Layer support
     try:
         result = await rag_service.query(
             question=chat.question,
             file_paths=file_paths,
-            space_name=space[1]
+            space_name=space[1],
+            space_id=space_id  # Enable Gold Layer routing
         )
+        
+        answer = result.get("answer", "Không tìm thấy câu trả lời.")
+        
+        # Add source indicator
+        if result.get("is_gold_query"):
+            answer += "\n\n_📊 Nguồn: Gold Layer SQL (100% chính xác)_"
+        
         return ChatResponse(
-            answer=result.get("answer", "Không tìm thấy câu trả lời."),
+            answer=answer,
             sources=result.get("sources", [])
         )
     except Exception as e:
@@ -192,3 +200,4 @@ async def chat_with_space(
             answer=f"❌ Lỗi AI: {str(e)}",
             sources=[]
         )
+

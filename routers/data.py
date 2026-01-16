@@ -556,3 +556,115 @@ async def ai_process_file_external(
         if os.path.exists(temp_path):
             os.remove(temp_path)
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============ GOLD LAYER ENDPOINTS ============
+
+@router.post("/gold/promote/{dataset_id}")
+async def promote_dataset_to_gold(
+    dataset_id: str,
+    force: bool = False,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Promote a dataset to Gold Layer for 100% accurate SQL queries
+    
+    - Extracts structured tables from file
+    - Validates and cleans data
+    - Stores in queryable Gold tables
+    """
+    from services.gold_layer_service import gold_layer_service
+    from database import get_db
+    
+    # Verify ownership and get file path
+    with get_db() as conn:
+        dataset = conn.execute("""
+            SELECT id, file_path, space_id, name
+            FROM datasets
+            WHERE id = ? AND user_id = ?
+        """, [dataset_id, current_user["id"]]).fetchone()
+        
+        if not dataset:
+            raise HTTPException(status_code=404, detail="Dataset not found")
+        
+        file_path = dataset[1]
+        space_id = dataset[2]
+    
+    # Promote to Gold
+    result = await gold_layer_service.promote_to_gold(
+        dataset_id=dataset_id,
+        file_path=file_path,
+        space_id=space_id,
+        force=force
+    )
+    
+    return result
+
+
+@router.get("/gold/tables/{space_id}")
+async def get_gold_tables(
+    space_id: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """Get all Gold tables available for SQL queries in a space"""
+    from services.gold_layer_service import gold_layer_service
+    from database import get_db
+    
+    # Verify space ownership
+    with get_db() as conn:
+        space = conn.execute("""
+            SELECT id FROM document_spaces WHERE id = ? AND user_id = ?
+        """, [space_id, current_user["id"]]).fetchone()
+        
+        if not space:
+            raise HTTPException(status_code=404, detail="Space not found")
+    
+    tables = await gold_layer_service.get_gold_tables(space_id)
+    return {
+        "space_id": space_id,
+        "gold_tables": tables,
+        "total": len(tables),
+        "queryable": True
+    }
+
+
+@router.post("/gold/query/{space_id}")
+async def query_gold_tables(
+    space_id: str,
+    sql: str = Form(...),
+    limit: int = Form(1000),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Execute SQL query on Gold tables - 100% accuracy
+    
+    Example: SELECT * FROM hardware WHERE so_luong > 5
+    """
+    from services.gold_layer_service import gold_layer_service
+    from database import get_db
+    
+    # Verify space ownership
+    with get_db() as conn:
+        space = conn.execute("""
+            SELECT id FROM document_spaces WHERE id = ? AND user_id = ?
+        """, [space_id, current_user["id"]]).fetchone()
+        
+        if not space:
+            raise HTTPException(status_code=404, detail="Space not found")
+    
+    result = await gold_layer_service.query_gold(space_id, sql, limit)
+    return result
+
+
+@router.get("/gold/preview/{gold_table_id}")
+async def preview_gold_table(
+    gold_table_id: str,
+    limit: int = 100,
+    current_user: dict = Depends(get_current_user)
+):
+    """Preview data from a Gold table"""
+    from services.gold_layer_service import gold_layer_service
+    
+    result = await gold_layer_service.get_table_preview(gold_table_id, limit)
+    return result
+

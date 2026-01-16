@@ -141,7 +141,60 @@ def init_database():
             )
         """)
         
-        print("✅ Database initialized successfully")
+        # ============ GOLD LAYER TABLES ============
+        # Gold tables - Structured data extracted from documents
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS gold_tables (
+                id VARCHAR PRIMARY KEY,
+                dataset_id VARCHAR NOT NULL,
+                space_id VARCHAR,
+                table_name VARCHAR NOT NULL,
+                source_file VARCHAR,
+                source_type VARCHAR,
+                schema_json VARCHAR,
+                row_count INTEGER DEFAULT 0,
+                column_count INTEGER DEFAULT 0,
+                quality_score DOUBLE DEFAULT 0,
+                quality_level VARCHAR DEFAULT 'bronze',
+                parquet_path VARCHAR,
+                is_queryable BOOLEAN DEFAULT TRUE,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        
+        # Gold columns - Column metadata for each gold table
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS gold_columns (
+                id VARCHAR PRIMARY KEY,
+                gold_table_id VARCHAR NOT NULL,
+                column_name VARCHAR NOT NULL,
+                column_type VARCHAR NOT NULL,
+                sql_type VARCHAR NOT NULL,
+                is_nullable BOOLEAN DEFAULT TRUE,
+                is_primary_key BOOLEAN DEFAULT FALSE,
+                sample_values VARCHAR,
+                valid_percentage DOUBLE DEFAULT 100,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (gold_table_id) REFERENCES gold_tables(id)
+            )
+        """)
+        
+        # Query cache - For faster repeated queries
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS query_cache (
+                id VARCHAR PRIMARY KEY,
+                space_id VARCHAR NOT NULL,
+                query_hash VARCHAR NOT NULL,
+                query_text VARCHAR NOT NULL,
+                result_json VARCHAR,
+                hit_count INTEGER DEFAULT 1,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                last_hit_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        
+        print("✅ Database initialized successfully (with Gold Layer tables)")
 
 # Initialize on import
 init_database()

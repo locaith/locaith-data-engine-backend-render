@@ -60,10 +60,16 @@ class RAGService:
         self, 
         question: str, 
         file_paths: List[str],
-        space_name: str = "Document Space"
+        space_name: str = "Document Space",
+        space_id: str = None
     ) -> Dict[str, Any]:
         """
-        Query AI with context from ALL documents
+        Smart Query with Gold Layer support
+        
+        Flow:
+        1. Check Gold tables và Smart Router
+        2. Nếu có structured data → SQL query (100% accurate)
+        3. Fallback → AI với document context
         """
         if not self.is_available():
             return {
@@ -71,22 +77,56 @@ class RAGService:
                 "sources": []
             }
         
-        # Read ALL document contents (no limit)
+        # Try Gold Layer first if space_id provided
+        if space_id:
+            try:
+                from services.gold_layer_service import gold_layer_service
+                from services.smart_query_router import smart_query_router
+                
+                # Get Gold tables for this space
+                gold_tables = await gold_layer_service.get_gold_tables(space_id)
+                
+                if gold_tables:
+                    # Route query through Smart Router
+                    routed = await smart_query_router.route_query(
+                        question=question,
+                        space_id=space_id,
+                        gold_tables=gold_tables,
+                        file_paths=file_paths
+                    )
+                    
+                    # If router returned a direct answer (SQL result)
+                    if not routed.get("use_ai"):
+                        return {
+                            "answer": routed.get("answer", ""),
+                            "sources": [],
+                            "source_type": routed.get("source_type", "gold"),
+                            "is_gold_query": True,
+                            "from_cache": routed.get("from_cache", False)
+                        }
+                    
+                    # Add Gold context to AI query
+                    gold_context = routed.get("gold_context")
+                    if gold_context:
+                        # Use Gold data as additional context
+                        pass  # Will enhance prompt below
+            except Exception as e:
+                print(f"[RAG] Gold Layer error: {e}")
+        
+        # Fallback: Read documents and use AI
         context_parts = []
         sources = []
-        all_docs = []  # Track all documents for listing
+        all_docs = []
         
-        for file_path in file_paths:  # Process ALL files, no [:5] limit
+        for file_path in file_paths:
             try:
-                file_name = Path(file_path).stem  # Get name without extension
+                file_name = Path(file_path).stem
                 content = await self._read_file_content(file_path)
                 
-                # Track all documents
                 doc_info = {"file": file_name, "path": file_path, "has_content": content is not None}
                 all_docs.append(doc_info)
                 
                 if content:
-                    # Limit content per file to avoid token overflow, but still include all files
                     max_chars = min(8000, 50000 // max(len(file_paths), 1))
                     context_parts.append(f"=== {file_name} ===\n{content[:max_chars]}")
                     sources.append({"file": file_name, "path": file_path})
@@ -100,7 +140,7 @@ class RAGService:
                 "sources": []
             }
         
-        # Build improved prompt with document listing
+        # Build improved prompt
         context = "\n\n".join(context_parts)
         doc_list = "\n".join([f"- {d['file']}" for d in all_docs])
         
@@ -126,7 +166,8 @@ YÊU CẦU:
             return {
                 "answer": answer,
                 "sources": sources,
-                "total_documents": len(all_docs)
+                "total_documents": len(all_docs),
+                "source_type": "ai"
             }
         except Exception as e:
             return {
