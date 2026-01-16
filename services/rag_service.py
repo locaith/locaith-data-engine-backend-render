@@ -189,14 +189,21 @@ YÊU CẦU:
             if ext in ['.txt', '.csv', '.json', '.md']:
                 return path.read_text(encoding='utf-8', errors='ignore')[:10000]
             
-            # PDF
+            # PDF - Extract ALL text from all pages
             elif ext == '.pdf':
                 import pdfplumber
-                text = []
+                text_parts = []
                 with pdfplumber.open(file_path) as pdf:
-                    for page in pdf.pages[:10]:  # Limit pages
-                        text.append(page.extract_text() or "")
-                return "\n".join(text)[:10000]
+                    for page_num, page in enumerate(pdf.pages[:20], 1):  # Up to 20 pages
+                        page_text = page.extract_text()
+                        if page_text and page_text.strip():
+                            text_parts.append(f"[Trang {page_num}]\n{page_text.strip()}")
+                
+                if text_parts:
+                    return "\n\n".join(text_parts)[:15000]
+                else:
+                    # No text extracted - might be scanned PDF
+                    return "[PDF này có thể là ảnh scan, không extract được text trực tiếp]"
             
             # Word docs
             elif ext == '.docx':

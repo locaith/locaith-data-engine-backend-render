@@ -90,43 +90,63 @@ class LakehouseService:
                 return pd.DataFrame([{"content": "Không thể đọc file PPTX"}])
     
     def _extract_pdf_data(self, file_path: str) -> pd.DataFrame:
-        """Extract tabular data from PDF file"""
+        """Extract ALL content from PDF file - tables AND text"""
         import pdfplumber
         
         all_tables = []
-        text_data = []
+        all_text = []
         
-        with pdfplumber.open(file_path) as pdf:
-            for page in pdf.pages:
-                # Try to extract tables
-                tables = page.extract_tables()
-                for table in tables:
-                    if table and len(table) > 1:
-                        # First row as headers
-                        headers = [h if h else f"col_{i}" for i, h in enumerate(table[0])]
-                        for row in table[1:]:
-                            if row:
-                                row_dict = {}
-                                for i, val in enumerate(row):
-                                    if i < len(headers):
-                                        row_dict[headers[i]] = val
-                                all_tables.append(row_dict)
-                
-                # Extract text if no tables found
-                if not tables:
+        try:
+            with pdfplumber.open(file_path) as pdf:
+                for page_num, page in enumerate(pdf.pages, 1):
+                    # Always try to extract tables
+                    tables = page.extract_tables()
+                    for table in tables:
+                        if table and len(table) > 1:
+                            headers = [h if h else f"col_{i}" for i, h in enumerate(table[0])]
+                            for row in table[1:]:
+                                if row:
+                                    row_dict = {"_page": page_num, "_type": "table"}
+                                    for i, val in enumerate(row):
+                                        if i < len(headers):
+                                            row_dict[headers[i]] = val
+                                    all_tables.append(row_dict)
+                    
+                    # ALWAYS extract text content (not just when no tables)
                     text = page.extract_text()
-                    if text:
-                        text_data.append({"page": pdf.pages.index(page) + 1, "content": text[:1000]})
-        
-        # Return extracted data as DataFrame
-        if all_tables:
-            df = pd.DataFrame(all_tables)
-        elif text_data:
-            df = pd.DataFrame(text_data)
-        else:
-            df = pd.DataFrame({"message": ["PDF không có dữ liệu bảng"]})
-        
-        return df
+                    if text and text.strip():
+                        all_text.append({
+                            "page": page_num,
+                            "content": text.strip(),
+                            "_type": "text"
+                        })
+            
+            # Combine tables and text
+            if all_tables and all_text:
+                # Both tables and text found
+                df_tables = pd.DataFrame(all_tables)
+                df_text = pd.DataFrame(all_text)
+                # Prefer text content for full document understanding
+                df = df_text
+            elif all_tables:
+                df = pd.DataFrame(all_tables)
+            elif all_text:
+                df = pd.DataFrame(all_text)
+            else:
+                # No content extracted - might be scanned/image PDF
+                df = pd.DataFrame({
+                    "message": ["PDF có thể là ảnh scan, cần OCR để đọc"],
+                    "suggestion": ["Sử dụng AI Document Intelligence để extract"]
+                })
+            
+            return df
+            
+        except Exception as e:
+            # Handle extraction errors gracefully
+            return pd.DataFrame({
+                "error": [f"Lỗi đọc PDF: {str(e)}"],
+                "file": [file_path]
+            })
     
     def ingest_file(self, file_path: str, user_id: str, name: str, description: str = None, space_id: str = None, storage_url: str = None) -> Dict[str, Any]:
         """Ingest a file into the lakehouse"""
