@@ -40,6 +40,7 @@ async def upload_file(
     file: UploadFile = File(...),
     name: str = Form(...),
     description: Optional[str] = Form(None),
+    space_id: Optional[str] = Form(None),
     current_user: dict = Depends(get_current_user)
 ):
     """Upload a data file (CSV, JSON, Parquet, PDF, Excel, Word, Text, PowerPoint)"""
@@ -66,8 +67,21 @@ async def upload_file(
             file_path=temp_path,
             user_id=current_user["id"],
             name=name,
-            description=description
+            description=description,
+            space_id=space_id
         )
+        
+        # Update space file_count if space_id provided
+        if space_id:
+            from database import get_db
+            with get_db() as conn:
+                conn.execute("""
+                    UPDATE document_spaces 
+                    SET file_count = file_count + 1,
+                        total_size_mb = total_size_mb + ?,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE id = ? AND user_id = ?
+                """, [result["file_size"] / (1024 * 1024), space_id, current_user["id"]])
         
         # Clean up temp file
         os.remove(temp_path)

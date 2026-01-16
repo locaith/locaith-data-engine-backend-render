@@ -128,7 +128,7 @@ class LakehouseService:
         
         return df
     
-    def ingest_file(self, file_path: str, user_id: str, name: str, description: str = None) -> Dict[str, Any]:
+    def ingest_file(self, file_path: str, user_id: str, name: str, description: str = None, space_id: str = None) -> Dict[str, Any]:
         """Ingest a file into the lakehouse"""
         file_ext = os.path.splitext(file_path)[1].lower()
         
@@ -219,9 +219,9 @@ class LakehouseService:
         # Save dataset metadata
         with get_db() as conn:
             conn.execute("""
-                INSERT INTO datasets (id, user_id, name, description, file_path, file_type, file_size, row_count, schema_json)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, [dataset_id, user_id, name, description, parquet_path, file_type, file_size, row_count, json.dumps(schema_info)])
+                INSERT INTO datasets (id, user_id, space_id, name, description, file_path, file_type, file_size, row_count, schema_json)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, [dataset_id, user_id, space_id, name, description, parquet_path, file_type, file_size, row_count, json.dumps(schema_info)])
         
         return {
             "id": dataset_id,
