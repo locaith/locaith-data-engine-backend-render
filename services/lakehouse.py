@@ -89,6 +89,37 @@ class LakehouseService:
             except:
                 return pd.DataFrame([{"content": "Không thể đọc file PPTX"}])
     
+    def _extract_image_data(self, file_path: str) -> pd.DataFrame:
+        """Extract text from images using OCR (Gemini Vision or Tesseract)"""
+        import asyncio
+        
+        try:
+            from services.ocr_service import ocr_service
+            
+            # Run OCR
+            loop = asyncio.new_event_loop()
+            result = loop.run_until_complete(ocr_service.extract_text_from_image(file_path))
+            loop.close()
+            
+            if result.get("success") and result.get("text"):
+                return pd.DataFrame([{
+                    "content": result["text"],
+                    "_ocr_method": result.get("method", "unknown"),
+                    "_type": "ocr"
+                }])
+            else:
+                return pd.DataFrame([{
+                    "content": "[Không thể OCR ảnh]",
+                    "error": result.get("error", "Unknown error"),
+                    "_type": "error"
+                }])
+                
+        except Exception as e:
+            return pd.DataFrame([{
+                "content": f"[Lỗi OCR: {str(e)}]",
+                "_type": "error"
+            }])
+    
     def _extract_pdf_data(self, file_path: str) -> pd.DataFrame:
         """Extract ALL content from PDF file - tables AND text, with OCR fallback"""
         import pdfplumber
@@ -213,6 +244,10 @@ class LakehouseService:
             # Extract text from PowerPoint
             df = self._extract_pptx_data(file_path)
             file_type = 'pptx'
+        elif file_ext in ['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp']:
+            # Extract text from images using OCR
+            df = self._extract_image_data(file_path)
+            file_type = 'image'
         else:
             # Try to read as plain text for unknown types
             try:
