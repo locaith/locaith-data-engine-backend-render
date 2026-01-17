@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Form, Header, Request
+from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Form, Header, Request, BackgroundTasks
 from typing import List, Optional
 import os
 import aiofiles
@@ -36,89 +36,116 @@ async def get_api_key_user(request: Request, x_api_key: str = Header(None, alias
         )
     return key_info
 
-@router.post("/upload", response_model=DatasetResponse)
+async def process_dataset_background(
+    dataset_id: str,
+    temp_path: str,
+    user_id: str,
+    name: str,
+    description: str,
+    space_id: str,
+    storage_url: str
+):
+    """Background task to process file ingestion without blocking request"""
+    try:
+        print(f"[Background] Starting processing for dataset {dataset_id} ({name})")
+        await lakehouse_service.ingest_file(
+            file_path=temp_path,
+            user_id=user_id,
+            name=name,
+            description=description,
+            space_id=space_id,
+            storage_url=storage_url,
+            dataset_id=dataset_id
+        )
+        print(f"[Background] Dataset {dataset_id} processed successfully")
+        
+        # Cleanup temp file
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+            
+    except Exception as e:
+        print(f"[Background] Error processing dataset {dataset_id}: {str(e)}")
+        # Update status to error
+        lakehouse_service.update_dataset_status(dataset_id, "error", str(e))
+        # Cleanup temp file on error too
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+
+@router.post("/upload", response_model=DatasetResponse, status_code=202)
 async def upload_file(
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     name: str = Form(...),
     description: Optional[str] = Form(None),
     space_id: Optional[str] = Form(None),
     current_user: dict = Depends(get_current_user)
 ):
-    """Upload a data file (CSV, JSON, Parquet, PDF, Excel, Word, Text, PowerPoint)"""
-    # Validate file type - support all common document formats
+    """Upload a data file and process it in the background"""
     allowed_extensions = ['.csv', '.json', '.parquet', '.pdf', '.xlsx', '.xls', '.docx', '.doc', '.txt', '.xml', '.html', '.htm', '.pptx', '.ppt']
     file_ext = os.path.splitext(file.filename)[1].lower()
     
     if file_ext not in allowed_extensions:
-        raise HTTPException(
-            status_code=400, 
-            detail=f"File không hỗ trợ. Chỉ chấp nhận: {', '.join(allowed_extensions)}"
-        )
+        raise HTTPException(status_code=400, detail=f"File không hỗ trợ. Chấp nhận: {', '.join(allowed_extensions)}")
     
-    # Read file content
     content = await file.read()
     file_id = generate_uuid()
     
-    # Try to upload to Supabase Storage first (for persistence)
+    # Supabase persistence
     storage_url = None
     if supabase_storage.is_available():
         storage_path = f"{current_user['id']}/{file_id}{file_ext}"
         success, result = await supabase_storage.upload_file(content, storage_path)
-        if success:
-            storage_url = result
-            print(f"[Upload] File persisted to Supabase: {storage_url}")
-        else:
-            print(f"[Upload] Supabase upload failed, using local: {result}")
+        if success: storage_url = result
     
-    # Save file locally for processing (temporary)
+    # Local temp storage for background processing
     temp_path = os.path.join(settings.DATA_DIR, "raw", f"{file_id}{file_ext}")
     os.makedirs(os.path.dirname(temp_path), exist_ok=True)
-    
     async with aiofiles.open(temp_path, 'wb') as f:
         await f.write(content)
     
-    try:
-        # Ingest file (pass storage_url if available)
-        result = await lakehouse_service.ingest_file(
-            file_path=temp_path,
-            user_id=current_user["id"],
-            name=name,
-            description=description,
-            space_id=space_id,
-            storage_url=storage_url  # Store Supabase URL for later retrieval
-        )
-        
-        # Update space file_count if space_id provided
-        if space_id:
-            from database import get_db
-            with get_db() as conn:
-                conn.execute("""
-                    UPDATE document_spaces 
-                    SET file_count = file_count + 1,
-                        total_size_mb = total_size_mb + ?,
-                        updated_at = CURRENT_TIMESTAMP
-                    WHERE id = ? AND user_id = ?
-                """, [result["file_size"] / (1024 * 1024), space_id, current_user["id"]])
-        
-        # Clean up temp file (we have it in Supabase now)
-        if os.path.exists(temp_path):
-            os.remove(temp_path)
-        
-        return DatasetResponse(
-            id=result["id"],
-            name=result["name"],
-            description=description,
-            file_type=result["file_type"],
-            file_size=result["file_size"],
-            row_count=result["row_count"],
-            schema_json=str(result["schema"]),
-            created_at=result.get("created_at")
-        )
-    except Exception as e:
-        # Clean up on error
-        if os.path.exists(temp_path):
-            os.remove(temp_path)
-        raise HTTPException(status_code=400, detail=str(e))
+    # 1. Create placeholder record with 'processing' status
+    lakehouse_service.create_dataset_placeholder(
+        dataset_id=file_id,
+        user_id=current_user["id"],
+        space_id=space_id,
+        name=name,
+        description=description,
+        file_type=file_ext.lstrip('.')
+    )
+    
+    # 2. Add to background tasks
+    background_tasks.add_task(
+        process_dataset_background,
+        dataset_id=file_id,
+        temp_path=temp_path,
+        user_id=current_user["id"],
+        name=name,
+        description=description,
+        space_id=space_id,
+        storage_url=storage_url
+    )
+    
+    # 3. Update space file_count immediately (preemptive)
+    if space_id:
+        from database import get_db
+        with get_db() as conn:
+            conn.execute("""
+                UPDATE document_spaces 
+                SET file_count = file_count + 1,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = ? AND user_id = ?
+            """, [space_id, current_user["id"]])
+    
+    # 4. Return immediately to avoid timeout
+    return DatasetResponse(
+        id=file_id,
+        name=name,
+        description=description,
+        file_type=file_ext.lstrip('.'),
+        file_size=len(content),
+        row_count=0,
+        status="processing"
+    )
 
 @router.get("/datasets", response_model=List[DatasetResponse])
 async def list_datasets(current_user: dict = Depends(get_current_user)):

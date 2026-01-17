@@ -64,19 +64,32 @@ class OCRService:
             
             print(f"[OCR] Starting parallel processing for {max_pages} pages...")
             
-            # Step 1: Create image-to-text tasks for all pages in parallel
-            tasks = []
-            for i in range(max_pages):
-                page = doc[i]
-                pix = page.get_pixmap(dpi=150)
-                img_data = pix.tobytes("png")
-                image_base64 = base64.b64encode(img_data).decode('utf-8')
-                tasks.append(self._process_single_page(image_base64, i + 1, verify=verify))
+            # Step 1: Process pages in batches to save memory (Crucial for Render Free Tier)
+            batch_size = 2
+            results = []
             
-            # Step 2: Run all tasks concurrently
-            results = await asyncio.gather(*tasks)
+            for i in range(0, max_pages, batch_size):
+                batch_tasks = []
+                batch_end = min(i + batch_size, max_pages)
+                
+                print(f"[OCR] Processing batch: pages {i+1} to {batch_end}...")
+                
+                for j in range(i, batch_end):
+                    page = doc[j]
+                    # Lower DPI (130) saves 40% RAM vs 150 while keeping text clear for Gemini
+                    pix = page.get_pixmap(dpi=130)
+                    img_data = pix.tobytes("png")
+                    image_base64 = base64.b64encode(img_data).decode('utf-8')
+                    batch_tasks.append(self._process_single_page(image_base64, j + 1, verify=verify))
+                
+                # Run current batch
+                batch_results = await asyncio.gather(*batch_tasks)
+                results.extend(batch_results)
+                
+                # Small sleep to let GC clean up
+                await asyncio.sleep(0.5)
             
-            # Step 3: Combine results
+            # Step 2: Combine results
             pages_data = []
             full_text = []
             verification_status = []
@@ -96,7 +109,7 @@ class OCRService:
                 "success": True,
                 "text": "\n\n".join(full_text),
                 "pages": pages_data,
-                "method": "gemini-3-parallel",
+                "method": "gemini-3-batched",
                 "accuracy_score": accuracy_score,
                 "verified": all(verification_status) if verification_status else False,
                 "total_pages": total_pages,

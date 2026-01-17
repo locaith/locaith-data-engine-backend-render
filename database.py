@@ -67,6 +67,8 @@ def init_database():
                 row_count BIGINT,
                 schema_json VARCHAR,
                 storage_url VARCHAR,
+                status VARCHAR DEFAULT 'success',
+                error_message VARCHAR,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )

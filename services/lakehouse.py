@@ -171,7 +171,7 @@ class LakehouseService:
             "_type": ["error"]
         })
     
-    async def ingest_file(self, file_path: str, user_id: str, name: str, description: str = None, space_id: str = None, storage_url: str = None) -> Dict[str, Any]:
+    async def ingest_file(self, file_path: str, user_id: str, name: str, description: str = None, space_id: str = None, storage_url: str = None, dataset_id: str = None) -> Dict[str, Any]:
         """Ingest a file into the lakehouse (now fully ASYNC)"""
         file_ext = os.path.splitext(file_path)[1].lower()
         
@@ -227,8 +227,8 @@ class LakehouseService:
             except:
                 raise ValueError(f"Unsupported file type: {file_ext}")
         
-        # Generate dataset ID
-        dataset_id = generate_uuid()
+        # Use existing dataset_id or generate a new one
+        dataset_id = dataset_id or generate_uuid()
         
         # ========== ENTERPRISE DATA CLEANING (100% ACCURACY) ==========
         # Clean and validate BEFORE storing for AI fine-tuning quality
@@ -288,11 +288,23 @@ class LakehouseService:
         row_count = len(df)
         
         # Save dataset metadata (include storage_url if available for persistence)
+        # Save dataset metadata (UPSERT logic: update if exists, insert if new)
+        status = "success"
         with get_db() as conn:
-            conn.execute("""
-                INSERT INTO datasets (id, user_id, space_id, name, description, file_path, file_type, file_size, row_count, schema_json, storage_url)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, [dataset_id, user_id, space_id, name, description, parquet_path, file_type, file_size, row_count, json.dumps(schema_info), storage_url])
+            # Check if record exists
+            exists = conn.execute("SELECT id FROM datasets WHERE id = ?", [dataset_id]).fetchone()
+            
+            if exists:
+                conn.execute("""
+                    UPDATE datasets 
+                    SET file_path = ?, file_type = ?, file_size = ?, row_count = ?, schema_json = ?, storage_url = ?, status = ?, updated_at = CURRENT_TIMESTAMP
+                    WHERE id = ?
+                """, [parquet_path, file_type, file_size, row_count, json.dumps(schema_info), storage_url, status, dataset_id])
+            else:
+                conn.execute("""
+                    INSERT INTO datasets (id, user_id, space_id, name, description, file_path, file_type, file_size, row_count, schema_json, storage_url, status)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, [dataset_id, user_id, space_id, name, description, parquet_path, file_type, file_size, row_count, json.dumps(schema_info), storage_url, status])
         
         return {
             "id": dataset_id,
@@ -308,11 +320,21 @@ class LakehouseService:
             }
         }
     
+    def create_dataset_placeholder(self, dataset_id: str, user_id: str, space_id: str, name: str, description: str, file_type: str) -> bool:
+        """Create a placeholder record for background processing"""
+        from database import get_db
+        with get_db() as conn:
+            conn.execute("""
+                INSERT INTO datasets (id, user_id, space_id, name, description, file_path, file_type, status)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, [dataset_id, user_id, space_id, name, description, "processing_in_progress", file_type, "processing"])
+        return True
+
     def get_datasets(self, user_id: str) -> List[Dict[str, Any]]:
         """Get all datasets for a user"""
         with get_db() as conn:
             result = conn.execute("""
-                SELECT id, name, description, file_type, file_size, row_count, schema_json, created_at
+                SELECT id, name, description, file_type, file_size, row_count, schema_json, status, error_message, created_at
                 FROM datasets
                 WHERE user_id = ?
                 ORDER BY created_at DESC
@@ -327,7 +349,9 @@ class LakehouseService:
                     "file_size": row[4],
                     "row_count": row[5],
                     "schema_json": row[6],
-                    "created_at": row[7]
+                    "status": row[7],
+                    "error_message": row[8],
+                    "created_at": row[9]
                 }
                 for row in result
             ]
@@ -336,9 +360,8 @@ class LakehouseService:
         """Get a specific dataset"""
         with get_db() as conn:
             result = conn.execute("""
-                SELECT id, name, description, file_path, file_type, file_size, row_count, schema_json, created_at
-                FROM datasets
-                WHERE id = ? AND user_id = ?
+                SELECT id, user_id, name, description, file_path, file_type, file_size, row_count, schema_json, status, error_message, created_at
+                FROM datasets WHERE id = ? AND user_id = ?
             """, [dataset_id, user_id]).fetchone()
             
             if not result:
@@ -346,15 +369,30 @@ class LakehouseService:
             
             return {
                 "id": result[0],
-                "name": result[1],
-                "description": result[2],
-                "file_path": result[3],
-                "file_type": result[4],
-                "file_size": result[5],
-                "row_count": result[6],
-                "schema_json": result[7],
-                "created_at": result[8]
+                "user_id": result[1],
+                "name": result[2],
+                "description": result[3],
+                "file_path": result[4],
+                "file_type": result[5],
+                "file_size": result[6],
+                "row_count": result[7],
+                "schema_json": result[8],
+                "status": result[9],
+                "error_message": result[10],
+                "created_at": result[11]
             }
+    
+    def update_dataset_status(self, dataset_id: str, status: str, error_message: str = None):
+        """Update dataset processing status"""
+        from database import get_db
+        with get_db() as conn:
+            conn.execute("""
+                UPDATE datasets 
+                SET status = ?, 
+                    error_message = ?, 
+                    updated_at = CURRENT_TIMESTAMP 
+                WHERE id = ?
+            """, [status, error_message, dataset_id])
     
     def preview_dataset(self, dataset_id: str, user_id: str, limit: int = 100) -> Optional[Dict[str, Any]]:
         """Preview dataset data"""
