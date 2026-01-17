@@ -28,25 +28,6 @@ app = FastAPI(
     redoc_url="/redoc"
 )
 
-# CORS middleware - Explicitly allow frontend domain for production security
-origins = [
-    "http://localhost:5173",
-    "http://localhost:3000",
-    "https://data.locaith.ai",
-    "https://locaith.ai",
-    "https://www.locaith.ai",
-    "https://locaith-data-engine.vercel.app"
-]
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-    expose_headers=["*"]
-)
-
 # Request timing middleware
 @app.middleware("http")
 async def add_timing_header(request: Request, call_next):
@@ -59,8 +40,8 @@ async def add_timing_header(request: Request, call_next):
 # API Key authentication for external API access
 @app.middleware("http")
 async def api_key_auth(request: Request, call_next):
-    # Skip auth for docs and internal endpoints
-    if request.url.path in ["/", "/docs", "/redoc", "/openapi.json", "/health"]:
+    # Skip auth for OPTIONS (preflight), docs and internal endpoints
+    if request.method == "OPTIONS" or request.url.path in ["/", "/docs", "/redoc", "/openapi.json", "/health"]:
         return await call_next(request)
     
     # Skip for auth endpoints (they use JWT)
@@ -107,6 +88,26 @@ app.include_router(ai.router, prefix="/api/v1")
 app.include_router(rag.router, prefix="/api/v1")
 app.include_router(spaces.router, prefix="/api/v1")
 app.include_router(external.router, prefix="/api/v1")
+
+# IMPORTANT: Add CORS middleware LAST to ensure it is the OUTERMOST layer
+# This handles OPTIONS requests and adds headers to ALL responses, including errors
+origins = [
+    "http://localhost:5173",
+    "http://localhost:3000",
+    "https://data.locaith.ai",
+    "https://locaith.ai",
+    "https://www.locaith.ai",
+    "https://locaith-data-engine.vercel.app"
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+    expose_headers=["*"]
+)
 
 # Root endpoint - Allow HEAD for health checks
 @app.api_route("/", methods=["GET", "HEAD"])
