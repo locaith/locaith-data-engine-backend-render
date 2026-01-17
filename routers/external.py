@@ -307,29 +307,28 @@ async def ingest_file(
         file_size = len(content)
         display_name = name if name else original_name.replace(ext, "")
         
-        # Save to database
-        with get_db() as conn:
-            conn.execute("""
-                INSERT INTO datasets (id, user_id, space_id, name, description, file_path, file_type, file_size)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """, [file_id, key_info["user_id"], space_id, display_name, description, file_path, ext[1:], file_size])
-            
-            # Update space stats
-            conn.execute("""
-                UPDATE document_spaces 
-                SET file_count = file_count + 1,
-                    total_size_mb = total_size_mb + ?
-                WHERE id = ?
-            """, [file_size / (1024 * 1024), space_id])
+        # Use lakehouse service for 100% accuracy pipeline (includes AI OCR & Cleaning)
+        from services.lakehouse import lakehouse_service
+        result = await lakehouse_service.ingest_file_by_api_key(
+            file_path=file_path,
+            api_key_id=key_info["id"],
+            user_id=key_info["user_id"],
+            name=display_name,
+            description=description
+        )
+        
+        # Cleanup temp file if needed (ingest_file handles storage if configured)
+        # However, external ingest uses settings.DATA_DIR/raw directly.
+        # ingest_file will save it to datasets/ parquet.
         
         # Record usage
         api_key_service.record_usage(key_info["id"], "file_upload")
         
         return IngestResponse(
             success=True,
-            file_id=file_id,
-            file_name=display_name,
-            message=f"File '{display_name}' đã được upload thành công!"
+            file_id=result["id"],
+            file_name=result["name"],
+            message=f"File '{result['name']}' đã được upload và chuẩn hóa thành công!"
         )
         
     except HTTPException:

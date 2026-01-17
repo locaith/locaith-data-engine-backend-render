@@ -79,7 +79,7 @@ async def upload_file(
     
     try:
         # Ingest file (pass storage_url if available)
-        result = lakehouse_service.ingest_file(
+        result = await lakehouse_service.ingest_file(
             file_path=temp_path,
             user_id=current_user["id"],
             name=name,
@@ -214,7 +214,7 @@ async def upload_file_external(
     
     try:
         # Use API Key isolated ingest (data belongs to API Key, not admin)
-        result = lakehouse_service.ingest_file_by_api_key(
+        result = await lakehouse_service.ingest_file_by_api_key(
             file_path=temp_path,
             api_key_id=api_key_id,
             user_id=user_id,

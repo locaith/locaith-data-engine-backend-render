@@ -128,7 +128,10 @@ class EnterpriseDataCleaner:
             # Step 3: Normalize column names
             df_clean = self._normalize_columns(df_clean, report)
             
-            # Step 4: Type detection and validation
+            # Step 4: Advanced Vietnamese Normalization (Tone, Address, Currency)
+            df_clean = self._normalize_vn_text(df_clean, report)
+            
+            # Step 5: Type detection and validation
             df_clean = self._validate_and_convert_types(df_clean, report)
             
             # Step 5: Detect and flag anomalies (don't auto-fix in strict mode)
@@ -195,6 +198,83 @@ class EnterpriseDataCleaner:
         for wrong, correct in replacements.items():
             text = text.replace(wrong, correct)
         
+        return text
+
+    def _normalize_vn_text(self, df: pd.DataFrame, report: DataIntegrityReport) -> pd.DataFrame:
+        """Suite of high-end Vietnamese text normalization"""
+        for col in df.select_dtypes(include=['object']).columns:
+            try:
+                # Apply sequence of VN normalization
+                df[col] = df[col].apply(lambda x: self._deep_normalize_row(x) if isinstance(x, str) else x)
+                report.actions_taken.append({
+                    "action": "normalize_vn_text",
+                    "column": col,
+                    "timestamp": datetime.now().isoformat()
+                })
+            except Exception as e:
+                report.warnings.append(f"VN normalization failed for {col}: {str(e)}")
+        return df
+
+    def _deep_normalize_row(self, text: str) -> str:
+        """Deep clean a single string for Vietnamese correctness"""
+        if not text: return text
+        
+        # 1. Normalize tone marks (òa -> oà)
+        text = self._normalize_vn_tone(text)
+        
+        # 2. Normalize common abbreviations (TP. -> Thành phố)
+        text = self._normalize_vn_address(text)
+        
+        # 3. Normalize currency (VND, đ -> VNĐ)
+        text = self._normalize_vn_currency(text)
+        
+        # 4. Remove OCR Artifacts
+        text = self._remove_ocr_noise(text)
+        
+        return text.strip()
+
+    def _normalize_vn_tone(self, text: str) -> str:
+        """Standardize Vietnamese tone mark placement"""
+        tone_map = {
+            'òa': 'oà', 'ỏà': 'oả', 'õà': 'oã', 'óà': 'oá', 'òà': 'oà', 'ọà': 'oạ',
+            'òe': 'oè', 'ỏe': 'oẻ', 'õe': 'oẽ', 'óe': 'oé', 'ọe': 'oẹ',
+            'ùy': 'uỳ', 'ủy': 'uỷ', 'ũy': 'uỹ', 'úy': 'uý', 'ụy': 'uỵ'
+        }
+        for old, new in tone_map.items():
+            text = text.replace(old, new)
+        return text
+
+    def _normalize_vn_address(self, text: str) -> str:
+        """Normalize common Vietnamese address abbreviations"""
+        addr_map = {
+            r'\bTP\.?\b': 'Thành phố',
+            r'\bTT\.?\b': 'Thị trấn',
+            r'\bH\.?\b': 'Huyện',
+            r'\bQ\.?\b': 'Quận',
+            r'\bP\.?\b': 'Phường',
+            r'\bX\.?\b': 'Xã',
+            r'\bĐ\.?\b': 'Đường',
+            r'\bĐT\b': 'Điện thoại',
+            r'\bSĐT\b': 'Số điện thoại',
+            r'\bKhu CN\b': 'Khu công nghiệp',
+            r'\bKCN\b': 'Khu công nghiệp'
+        }
+        for pattern, replacement in addr_map.items():
+            text = re.sub(pattern, replacement, text, flags=re.IGNORECASE)
+        return text
+
+    def _normalize_vn_currency(self, text: str) -> str:
+        """Standardize currency notations"""
+        text = re.sub(r'\b(VND|vnđ|vn đ|đ|đồng)\b', 'VNĐ', text, flags=re.IGNORECASE)
+        text = re.sub(r'([\d\.,]+)\s*VNĐ', r'\1 VNĐ', text)
+        return text
+
+    def _remove_ocr_noise(self, text: str) -> str:
+        """Remove common Vietnamese OCR artifacts"""
+        text = re.sub(r',{2,}', ',', text)
+        text = re.sub(r'\.{4,}', '...', text)
+        text = re.sub(r'^[|I1]\s+', '', text, flags=re.MULTILINE)
+        text = re.sub(r'\s+[|I1]$', '', text, flags=re.MULTILINE)
         return text
     
     def _normalize_whitespace(self, df: pd.DataFrame, report: DataIntegrityReport) -> pd.DataFrame:
