@@ -27,7 +27,7 @@ GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 class AIVerificationService:
     def __init__(self):
         self.client = None
-        self.model_name = "gemini-2.0-flash"  # Use stable model
+        self.model_name = "gemini-3-flash-preview"  # Use latest 35-KHĐU optimized model
         self.init_error = None
         
         if not GEMINI_API_KEY:

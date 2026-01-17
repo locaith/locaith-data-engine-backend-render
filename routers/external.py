@@ -430,7 +430,7 @@ async def query_with_ai(
         context = "\n\n".join(context_parts)
         
         genai.configure(api_key=settings.GEMINI_API_KEY)
-        model = genai.GenerativeModel('gemini-2.0-flash')
+        model = genai.GenerativeModel('gemini-3-flash-preview')
         
         prompt = f"""Bạn là trợ lý AI chuyên phân tích tài liệu. Dựa trên nội dung sau, hãy trả lời câu hỏi một cách chính xác và súc tích.
 

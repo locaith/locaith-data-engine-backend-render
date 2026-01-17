@@ -28,13 +28,23 @@ app = FastAPI(
     redoc_url="/redoc"
 )
 
-# CORS middleware
+# CORS middleware - Explicitly allow frontend domain for production security
+origins = [
+    "http://localhost:5173",
+    "http://localhost:3000",
+    "https://data.locaith.ai",
+    "https://locaith.ai",
+    "https://www.locaith.ai",
+    "https://locaith-data-engine.vercel.app"
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, specify allowed origins
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"]
 )
 
 # Request timing middleware
