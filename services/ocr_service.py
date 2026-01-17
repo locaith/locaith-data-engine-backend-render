@@ -37,8 +37,11 @@ class OCRService:
     
     def _check_gemini(self) -> bool:
         try:
+            from google import genai
             api_key = os.getenv("GEMINI_API_KEY")
-            return api_key is not None and len(api_key) > 10
+            if not api_key: return False
+            self.client = genai.Client(api_key=api_key)
+            return True
         except:
             return False
     
@@ -134,31 +137,34 @@ class OCRService:
             return {"success": False, "page": page_num, "text": ""}
 
     async def _call_gemini_vision(self, image_base64: str) -> Optional[str]:
-        """Standard Gemini Vision OCR Call"""
-        import google.generativeai as genai
-        genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-        model = genai.GenerativeModel(self.model_name)
-        
-        image_part = {"inline_data": {"mime_type": "image/png", "data": image_base64}}
-        prompt = "Trích xuất 100% nội dung chữ trong ảnh này. Giữ nguyên format và xuống dòng."
+        """Standard Gemini Vision OCR Call using new SDK"""
+        from google.genai import types
+        import base64
         
         try:
-            response = await model.generate_content_async([prompt, image_part])
+            image_bytes = base64.b64decode(image_base64)
+            prompt = "Trích xuất 100% nội dung chữ trong ảnh này. Giữ nguyên format và xuống dòng."
+            
+            response = await self.client.models.generate_content(
+                model=self.model_name,
+                contents=[
+                    prompt,
+                    types.Part.from_bytes(data=image_bytes, mime_type="image/png")
+                ]
+            )
             return response.text.strip()
-        except:
+        except Exception as e:
+            print(f"[OCR] Vision call error: {e}")
             return None
 
     async def _verify_and_refine(self, image_base64: str, extracted_text: str) -> Optional[str]:
-        """
-        THE BRAIN: AI reviews its own output for 100% accuracy
-        """
-        import google.generativeai as genai
-        genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-        model = genai.GenerativeModel(self.model_name)
+        """THE BRAIN: AI reviews its own output for 100% accuracy using new SDK"""
+        from google.genai import types
+        import base64
         
-        image_part = {"inline_data": {"mime_type": "image/png", "data": image_base64}}
-        
-        verify_prompt = f"""Bạn là chuyên gia kiểm định dữ liệu (QA). 
+        try:
+            image_bytes = base64.b64decode(image_base64)
+            verify_prompt = f"""Bạn là chuyên gia kiểm định dữ liệu (QA). 
 Dưới đây là văn bản đã được bóc tách từ ảnh:
 ---
 {extracted_text}
@@ -171,12 +177,17 @@ NHIỆM VỤ:
 4. KHÔNG giải thích, chỉ trả về văn bản cuối cùng đã được Verify 100% chính xác.
 
 VĂN BẢN CUỐI CÙNG:"""
-        
-        try:
-            response = await model.generate_content_async([verify_prompt, image_part])
+            
+            response = await self.client.models.generate_content(
+                model=self.model_name,
+                contents=[
+                    verify_prompt,
+                    types.Part.from_bytes(data=image_bytes, mime_type="image/png")
+                ]
+            )
             return response.text.strip()
         except:
-            return extracted_text # Fallback to original if verification fails
+            return extracted_text
 
     async def extract_text_from_image(self, image_path: str, verify: bool = True) -> Dict[str, Any]:
         """Extract from single image with verification"""

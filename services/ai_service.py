@@ -5,52 +5,51 @@ Verifies and validates data quality using AI
 import os
 from typing import Dict, Any, List, Optional
 
-# Try multiple import patterns for Gemini
+# Prioritize the new google-genai SDK (V2)
 try:
-    import google.generativeai as genai
-    USE_GENAI = True
+    from google import genai
+    from google.genai.types import GenerateContentConfig
+    USE_NEW_SDK = True
 except ImportError:
     try:
-        from google import genai as google_genai
-        USE_GENAI = False
+        import google.generativeai as google_generativeai
+        USE_NEW_SDK = False
     except ImportError:
-        USE_GENAI = None
+        USE_NEW_SDK = None
 
 from dotenv import load_dotenv
 
-# Load environment variables from .env file in backend folder
+# Load environment variables
 load_dotenv()
-
-# Get API key from environment
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 
 class AIVerificationService:
     def __init__(self):
         self.client = None
-        self.model_name = "gemini-3-flash-preview"  # Use latest 35-KHĐU optimized model
+        self.model_name = "gemini-3-flash-preview"
         self.init_error = None
         
         if not GEMINI_API_KEY:
-            self.init_error = "GEMINI_API_KEY not set in environment"
+            self.init_error = "GEMINI_API_KEY not set"
             print(f"[AI Service] Warning: {self.init_error}")
             return
         
         try:
-            if USE_GENAI is True:
-                # Use google-generativeai SDK
-                genai.configure(api_key=GEMINI_API_KEY)
-                self.client = genai.GenerativeModel(self.model_name)
-                print(f"[AI Service] Initialized with google-generativeai SDK, model: {self.model_name}")
-            elif USE_GENAI is False:
-                # Use google.genai SDK
-                self.client = google_genai.Client(api_key=GEMINI_API_KEY)
-                print(f"[AI Service] Initialized with google.genai SDK, model: {self.model_name}")
+            if USE_NEW_SDK:
+                # Use the new google-genai SDK
+                self.client = genai.Client(api_key=GEMINI_API_KEY)
+                print(f"[AI Service] Initialized with New google-genai SDK, model: {self.model_name}")
+            elif USE_NEW_SDK is False:
+                # Use legacy google-generativeai SDK
+                google_generativeai.configure(api_key=GEMINI_API_KEY)
+                self.client = google_generativeai.GenerativeModel(self.model_name)
+                print(f"[AI Service] Initialized with Legacy google-generativeai SDK, model: {self.model_name}")
             else:
                 self.init_error = "No Gemini SDK available"
                 print(f"[AI Service] Error: {self.init_error}")
         except Exception as e:
             self.init_error = str(e)
-            print(f"[AI Service] Failed to initialize: {e}")
+            print(f"[AI Service] Initialization failed: {e}")
     
     def is_available(self) -> bool:
         """Check if AI service is available"""
@@ -58,19 +57,8 @@ class AIVerificationService:
     
     def _generate(self, prompt: str, temperature: float = 0.3, max_tokens: int = 2000) -> str:
         """Helper method to generate content with either SDK"""
-        if USE_GENAI is True:
-            # google-generativeai SDK
-            response = self.client.generate_content(
-                prompt,
-                generation_config={
-                    "temperature": temperature,
-                    "max_output_tokens": max_tokens
-                }
-            )
-            return response.text
-        else:
-            # google.genai SDK
-            from google.genai.types import GenerateContentConfig
+        if USE_NEW_SDK:
+            # Use the new google.genai SDK
             response = self.client.models.generate_content(
                 model=self.model_name,
                 contents=prompt,
@@ -80,6 +68,17 @@ class AIVerificationService:
                 )
             )
             return response.text
+        elif USE_NEW_SDK is False:
+            # Legacy google-generativeai SDK
+            response = self.client.generate_content(
+                prompt,
+                generation_config={
+                    "temperature": temperature,
+                    "max_output_tokens": max_tokens
+                }
+            )
+            return response.text
+        return ""
     
     async def verify_data_quality(self, data_sample: List[Dict], schema: Dict) -> Dict[str, Any]:
         """

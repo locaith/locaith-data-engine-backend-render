@@ -72,21 +72,25 @@ class SmartQueryRouter:
         ]
     
     def _init_client(self):
-        """Initialize Gemini for SQL generation"""
+        """Initialize Gemini for SQL generation - Prioritize New SDK"""
         api_key = os.getenv("GEMINI_API_KEY")
         if not api_key:
             return
         
         try:
-            import google.generativeai as genai
-            genai.configure(api_key=api_key)
-            self.client = genai.GenerativeModel("gemini-3-flash-preview")
-            self.use_genai = True
-        except:
+            # Try the new google.genai SDK first
+            from google import genai
+            self.client = genai.Client(api_key=api_key)
+            self.use_genai = False # False means use the new client.models logic
+            print(f"[Smart Router] Initialized with New google.genai")
+        except ImportError:
             try:
-                from google import genai
-                self.client = genai.Client(api_key=api_key)
-                self.use_genai = False
+                # Fallback to legacy google-generativeai SDK
+                import google.generativeai as genai
+                genai.configure(api_key=api_key)
+                self.client = genai.GenerativeModel("gemini-3-flash-preview")
+                self.use_genai = True
+                print(f"[Smart Router] Initialized with Legacy google-generativeai")
             except:
                 pass
     

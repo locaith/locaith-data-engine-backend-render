@@ -426,11 +426,11 @@ async def query_with_ai(
                 tokens_used=0
             )
         
-        # Generate answer with Gemini
+        # Generate answer with Gemini using new SDK
         context = "\n\n".join(context_parts)
         
-        genai.configure(api_key=settings.GEMINI_API_KEY)
-        model = genai.GenerativeModel('gemini-3-flash-preview')
+        from google import genai
+        client = genai.Client(api_key=settings.GEMINI_API_KEY)
         
         prompt = f"""Bạn là trợ lý AI chuyên phân tích tài liệu. Dựa trên nội dung sau, hãy trả lời câu hỏi một cách chính xác và súc tích.
 
@@ -441,7 +441,10 @@ CÂU HỎI: {request.question}
 
 Hãy trả lời bằng tiếng Việt, dựa trên thông tin trong tài liệu. Nếu không tìm thấy thông tin liên quan, hãy nói rõ."""
 
-        response = model.generate_content(prompt)
+        response = client.models.generate_content(
+            model='gemini-3-flash-preview',
+            contents=prompt
+        )
         answer = response.text
         
         # Estimate tokens (rough)

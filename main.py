@@ -108,8 +108,8 @@ app.include_router(rag.router, prefix="/api/v1")
 app.include_router(spaces.router, prefix="/api/v1")
 app.include_router(external.router, prefix="/api/v1")
 
-# Root endpoint
-@app.get("/")
+# Root endpoint - Allow HEAD for health checks
+@app.get("/", methods=["GET", "HEAD"])
 async def root():
     return {
         "name": settings.APP_NAME,
@@ -119,8 +119,8 @@ async def root():
         "api_base": "/api/v1"
     }
 
-# Health check
-@app.get("/health")
+# Health check - Allow HEAD for health checks
+@app.get("/health", methods=["GET", "HEAD"])
 async def health_check():
     return {"status": "healthy", "timestamp": time.time()}
 

@@ -56,7 +56,7 @@ class DatasetResponse(BaseModel):
     file_type: str
     file_size: int
     row_count: Optional[int]
-    schema_json: Optional[str]
+    data_schema: Optional[str] = Field(None, alias="schema_json")
     created_at: Optional[datetime] = None
 
 class DatasetPreview(BaseModel):

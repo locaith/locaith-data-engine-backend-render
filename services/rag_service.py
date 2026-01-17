@@ -17,26 +17,26 @@ class RAGService:
         self._init_client()
     
     def _init_client(self):
-        """Initialize Gemini client with proper SDK"""
+        """Initialize Gemini client with proper SDK - Prioritize New SDK"""
         api_key = os.getenv("GEMINI_API_KEY")
         if not api_key:
             print("[RAG Service] No GEMINI_API_KEY found")
             return
         
         try:
-            # Try google-generativeai SDK first
-            import google.generativeai as genai
-            genai.configure(api_key=api_key)
-            self.client = genai.GenerativeModel(self.model_name)
-            self.use_genai = True
-            print(f"[RAG Service] Initialized with google-generativeai, model: {self.model_name}")
+            # Try the new google.genai SDK first
+            from google import genai
+            self.client = genai.Client(api_key=api_key)
+            self.use_genai = False # False means use the new client.models logic
+            print(f"[RAG Service] Initialized with New google.genai, model: {self.model_name}")
         except ImportError:
             try:
-                # Fallback to google.genai SDK
-                from google import genai
-                self.client = genai.Client(api_key=api_key)
-                self.use_genai = False
-                print(f"[RAG Service] Initialized with google.genai, model: {self.model_name}")
+                # Fallback to legacy google-generativeai SDK
+                import google.generativeai as genai
+                genai.configure(api_key=api_key)
+                self.client = genai.GenerativeModel(self.model_name)
+                self.use_genai = True
+                print(f"[RAG Service] Initialized with Legacy google-generativeai, model: {self.model_name}")
             except Exception as e:
                 print(f"[RAG Service] Init error: {e}")
     

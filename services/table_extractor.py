@@ -116,12 +116,12 @@ class TableExtractor:
         }
 
     async def _extract_table_from_page_ai(self, image_base64: str, page_num: int) -> Dict[str, Any]:
-        """AI prompt to extract structured table from image"""
-        import google.generativeai as genai
-        genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-        model = genai.GenerativeModel(self.model_name)
+        """AI prompt to extract structured table from image using new SDK"""
+        from services.ocr_service import ocr_service
+        from google.genai import types
+        import base64
         
-        image_part = {"inline_data": {"mime_type": "image/png", "data": image_base64}}
+        image_bytes = base64.b64decode(image_base64)
         prompt = """Trích xuất các bảng dữ liệu trong ảnh này thành format JSON.
 QUY TẮC:
 1. Tìm tất cả các bảng.
@@ -131,7 +131,13 @@ QUY TẮC:
 5. Đảm bảo độ chính xác 100% so với ảnh."""
 
         try:
-            response = await model.generate_content_async([prompt, image_part])
+            response = await ocr_service.client.models.generate_content(
+                model=self.model_name,
+                contents=[
+                    prompt,
+                    types.Part.from_bytes(data=image_bytes, mime_type="image/png")
+                ]
+            )
             text = response.text.replace('```json', '').replace('```', '').strip()
             data = json.loads(text)
             if isinstance(data, dict): data = [data] # Handle single table return
