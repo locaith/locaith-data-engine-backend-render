@@ -80,7 +80,7 @@ class SmartQueryRouter:
         try:
             import google.generativeai as genai
             genai.configure(api_key=api_key)
-            self.client = genai.GenerativeModel("gemini-2.0-flash")
+            self.client = genai.GenerativeModel("gemini-3-flash-preview")
             self.use_genai = True
         except:
             try:
@@ -218,7 +218,7 @@ SQL:"""
                 sql = response.text.strip()
             else:
                 response = self.client.models.generate_content(
-                    model="gemini-2.0-flash",
+                    model="gemini-3-flash-preview",
                     contents=prompt
                 )
                 sql = response.text.strip()

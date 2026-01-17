@@ -13,7 +13,7 @@ class RAGService:
     
     def __init__(self):
         self.client = None
-        self.model_name = "gemini-2.0-flash"
+        self.model_name = "gemini-3-flash-preview"
         self._init_client()
     
     def _init_client(self):
