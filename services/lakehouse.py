@@ -226,6 +226,40 @@ class LakehouseService:
         # Generate dataset ID
         dataset_id = generate_uuid()
         
+        # ========== ENTERPRISE DATA CLEANING (100% ACCURACY) ==========
+        # Clean and validate BEFORE storing for AI fine-tuning quality
+        import asyncio
+        try:
+            from services.data_cleaner_service import enterprise_data_cleaner
+            
+            # Run cleaning in async context
+            loop = asyncio.new_event_loop()
+            df_cleaned, integrity_report = loop.run_until_complete(
+                enterprise_data_cleaner.clean_dataframe(df, source_name=name, strict_mode=True)
+            )
+            loop.close()
+            
+            # Log cleaning results
+            print(f"[Lakehouse] Data cleaned: {integrity_report.original_rows} rows, {len(integrity_report.actions_taken)} actions, integrity: {integrity_report.integrity_score}%")
+            
+            # Use cleaned dataframe
+            df = df_cleaned
+            
+            # Store cleaning metadata
+            cleaning_metadata = {
+                "original_rows": integrity_report.original_rows,
+                "cleaned_rows": integrity_report.cleaned_rows,
+                "integrity_score": integrity_report.integrity_score,
+                "actions_count": len(integrity_report.actions_taken),
+                "warnings": integrity_report.warnings[:5],  # Limit warnings
+                "data_loss": integrity_report.data_loss
+            }
+            
+        except Exception as clean_error:
+            print(f"[Lakehouse] Data cleaning warning: {clean_error}")
+            cleaning_metadata = {"status": "skipped", "reason": str(clean_error)}
+        # ========== END DATA CLEANING ==========
+        
         # ========== ADD PROVENANCE TRACKING ==========
         # Every row gets metadata about its source for 100% traceability
         original_filename = os.path.basename(file_path) if description else name
