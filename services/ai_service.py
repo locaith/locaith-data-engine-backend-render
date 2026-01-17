@@ -51,34 +51,36 @@ class AIVerificationService:
             self.init_error = str(e)
             print(f"[AI Service] Initialization failed: {e}")
     
-    def is_available(self) -> bool:
-        """Check if AI service is available"""
-        return self.client is not None
-    
-    def _generate(self, prompt: str, temperature: float = 0.3, max_tokens: int = 2000) -> str:
-        """Helper method to generate content with either SDK"""
-        if USE_NEW_SDK:
-            # Use the new google.genai SDK
-            response = self.client.models.generate_content(
-                model=self.model_name,
-                contents=prompt,
-                config=GenerateContentConfig(
-                    temperature=temperature,
-                    max_output_tokens=max_tokens
+    async def _generate(self, prompt: str, temperature: float = 0.3, max_tokens: int = 2000) -> str:
+        """Generate content using either SDK (Async)"""
+        if not self.is_available():
+            return ""
+            
+        try:
+            if USE_NEW_SDK:
+                # New google.genai SDK
+                response = await self.client.aio.models.generate_content(
+                    model=self.model_name,
+                    contents=prompt,
+                    config=GenerateContentConfig(
+                        temperature=temperature,
+                        max_output_tokens=max_tokens
+                    )
                 )
-            )
-            return response.text
-        elif USE_NEW_SDK is False:
-            # Legacy google-generativeai SDK
-            response = self.client.generate_content(
-                prompt,
-                generation_config={
-                    "temperature": temperature,
-                    "max_output_tokens": max_tokens
-                }
-            )
-            return response.text
-        return ""
+                return response.text
+            else:
+                # Legacy google-generativeai SDK
+                response = await self.client.generate_content_async(
+                    prompt,
+                    generation_config={
+                        "temperature": temperature,
+                        "max_output_tokens": max_tokens
+                    }
+                )
+                return response.text
+        except Exception as e:
+            print(f"[AI Service] Generation error: {e}")
+            return ""
     
     async def verify_data_quality(self, data_sample: List[Dict], schema: Dict) -> Dict[str, Any]:
         """
@@ -108,7 +110,8 @@ Please analyze and return a JSON response with:
 
 Return ONLY valid JSON, no markdown formatting."""
 
-            result_text = self._generate(prompt, temperature=0.3, max_tokens=2000).strip()
+            result_text = await self._generate(prompt, temperature=0.3, max_tokens=2000)
+            result_text = result_text.strip()
             
             # Parse response
             import json
@@ -175,7 +178,8 @@ Please return a JSON with:
 
 Return ONLY valid JSON."""
 
-            result_text = self._generate(prompt, temperature=0.2, max_tokens=4000).strip()
+            result_text = await self._generate(prompt, temperature=0.2, max_tokens=4000)
+            result_text = result_text.strip()
             
             import json
             if result_text.startswith("```"):
@@ -225,7 +229,8 @@ Please:
 
 Return ONLY valid JSON."""
 
-            result_text = self._generate(prompt, temperature=0.2, max_tokens=3000).strip()
+            result_text = await self._generate(prompt, temperature=0.2, max_tokens=3000)
+            result_text = result_text.strip()
             
             import json
             if result_text.startswith("```"):

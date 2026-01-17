@@ -163,18 +163,34 @@ async def chat_with_space(
         if not space:
             raise HTTPException(status_code=404, detail="Space not found")
         
-        # Get file paths in this space
-        files = conn.execute("""
-            SELECT file_path FROM datasets WHERE space_id = ?
+        # Get file paths in this space - ONLY FOR SUCCESSFUL DATASETS
+        dataset_records = conn.execute("""
+            SELECT id, name, file_path, status FROM datasets WHERE space_id = ?
         """, [space_id]).fetchall()
         
-        if not files:
+        if not dataset_records:
             return ChatResponse(
                 answer="⚠️ Space này chưa có file nào. Vui lòng upload file trước khi test AI.",
                 sources=[]
             )
         
-        file_paths = [f[0] for f in files]
+        # Check if any files are still processing
+        processing_files = [d[1] for d in dataset_records if d[3] == "processing"]
+        ready_files = [d[2] for d in dataset_records if d[3] == "success"]
+        
+        if not ready_files:
+            if processing_files:
+                return ChatResponse(
+                    answer="⏳ AI đang bóc tách nội dung của các file: " + ", ".join(processing_files) + ". Vui lòng quay lại sau 1-2 phút để bắt đầu chat.",
+                    sources=[]
+                )
+            else:
+                return ChatResponse(
+                    answer="⚠️ Không có dữ liệu hợp lệ để xử lý. Vui lòng kiểm tra lại file đã upload.",
+                    sources=[]
+                )
+        
+        file_paths = ready_files
     
     # Query RAG with Gold Layer support
     try:

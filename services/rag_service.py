@@ -44,13 +44,15 @@ class RAGService:
         """Check if service is available"""
         return self.client is not None
     
-    def _generate(self, prompt: str) -> str:
-        """Generate content with proper SDK"""
+    async def _generate(self, prompt: str) -> str:
+        """Generate content with proper SDK (Async)"""
         if self.use_genai:
-            response = self.client.generate_content(prompt)
+            # Legacy logic (assuming user has google-generativeai)
+            response = await self.client.generate_content_async(prompt)
             return response.text
         else:
-            response = self.client.models.generate_content(
+            # New V2 logic
+            response = await self.client.aio.models.generate_content(
                 model=self.model_name,
                 contents=prompt
             )
@@ -163,7 +165,7 @@ QUAN TRỌNG - QUY TẮC TRẢ LỜI:
 6. Nếu không tìm thấy thông tin, nói rõ ràng"""
 
         try:
-            answer = self._generate(prompt)
+            answer = await self._generate(prompt)
             
             return {
                 "answer": answer,

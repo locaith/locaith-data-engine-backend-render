@@ -218,10 +218,12 @@ SQL:"""
 
         try:
             if self.use_genai:
-                response = self.client.generate_content(prompt)
+                # Legacy async
+                response = await self.client.generate_content_async(prompt)
                 sql = response.text.strip()
             else:
-                response = self.client.models.generate_content(
+                # New V2 async
+                response = await self.client.aio.models.generate_content(
                     model="gemini-3-flash-preview",
                     contents=prompt
                 )

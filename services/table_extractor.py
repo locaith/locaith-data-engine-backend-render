@@ -131,7 +131,7 @@ QUY TẮC:
 5. Đảm bảo độ chính xác 100% so với ảnh."""
 
         try:
-            response = await ocr_service.client.models.generate_content(
+            response = await ocr_service.client.aio.models.generate_content(
                 model=self.model_name,
                 contents=[
                     prompt,

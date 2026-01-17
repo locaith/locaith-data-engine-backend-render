@@ -158,7 +158,7 @@ class OCRService:
             image_bytes = base64.b64decode(image_base64)
             prompt = "Trích xuất 100% nội dung chữ trong ảnh này. Giữ nguyên format và xuống dòng."
             
-            response = await self.client.models.generate_content(
+            response = await self.client.aio.models.generate_content(
                 model=self.model_name,
                 contents=[
                     prompt,
@@ -191,7 +191,7 @@ NHIỆM VỤ:
 
 VĂN BẢN CUỐI CÙNG:"""
             
-            response = await self.client.models.generate_content(
+            response = await self.client.aio.models.generate_content(
                 model=self.model_name,
                 contents=[
                     verify_prompt,
