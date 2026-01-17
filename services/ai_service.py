@@ -51,6 +51,10 @@ class AIVerificationService:
             self.init_error = str(e)
             print(f"[AI Service] Initialization failed: {e}")
     
+    def is_available(self) -> bool:
+        """Check if AI service is available"""
+        return self.client is not None
+    
     async def _generate(self, prompt: str, temperature: float = 0.3, max_tokens: int = 2000) -> str:
         """Generate content using either SDK (Async)"""
         if not self.is_available():

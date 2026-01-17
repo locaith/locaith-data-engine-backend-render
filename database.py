@@ -10,6 +10,19 @@ def get_connection():
     """Get a new DuckDB connection"""
     return duckdb.connect(settings.DATABASE_PATH)
 
+def ensure_column_exists(conn, table_name, column_name, column_type):
+    """Ensure a column exists in a table, add it if not"""
+    try:
+        # Check if column exists
+        columns = conn.execute(f"PRAGMA table_info('{table_name}')").fetchall()
+        column_names = [col[1] for col in columns]
+        
+        if column_name not in column_names:
+            print(f"[Database] Adding column {column_name} to table {table_name}...")
+            conn.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type}")
+    except Exception as e:
+        print(f"[Database] Error ensuring column {column_name} in {table_name}: {e}")
+
 @contextmanager
 def get_db():
     """Context manager for database connections"""
@@ -196,7 +209,23 @@ def init_database():
             )
         """)
         
-        print("✅ Database initialized successfully (with Gold Layer tables)")
+        # ============ MIGRATIONS ============
+        # Ensure status columns exist (for background processing)
+        ensure_column_exists(conn, "datasets", "status", "VARCHAR DEFAULT 'success'")
+        ensure_column_exists(conn, "datasets", "error_message", "VARCHAR")
+        
+        # Ensure document_spaces has all columns
+        ensure_column_exists(conn, "document_spaces", "status", "VARCHAR DEFAULT 'active'")
+        ensure_column_exists(conn, "document_spaces", "file_count", "INTEGER DEFAULT 0")
+        ensure_column_exists(conn, "document_spaces", "total_size_mb", "DOUBLE DEFAULT 0")
+        
+        # Ensure api_keys has storage limits (if not already there)
+        ensure_column_exists(conn, "api_keys", "storage_limit_mb", "INTEGER DEFAULT 100")
+        ensure_column_exists(conn, "api_keys", "request_limit_month", "INTEGER DEFAULT 10000")
+        ensure_column_exists(conn, "api_keys", "storage_used_mb", "DOUBLE DEFAULT 0")
+        ensure_column_exists(conn, "api_keys", "requests_this_month", "INTEGER DEFAULT 0")
+
+        print("✅ Database initialized and migrated successfully")
 
 # Initialize on import
 init_database()

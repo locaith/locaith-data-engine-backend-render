@@ -15,6 +15,7 @@ from typing import List, Dict, Any, Optional, Tuple
 from pathlib import Path
 import pandas as pd
 from datetime import datetime
+import base64
 
 
 class TableExtractor:
